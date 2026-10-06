@@ -1,0 +1,10 @@
+from django.conf import settings
+from django.urls import include, path, re_path
+from django.views.static import serve
+
+urlpatterns = [path("api/", include("core.urls"))]
+
+if settings.DEBUG:
+    # Development only. Only listing photos are public; private/ (ID documents) is NOT exposed.
+    # In production let nginx serve /media/listings/ and nothing else under media.
+    urlpatterns += [re_path(r"^media/(?P<path>listings/.*)$", serve, {"document_root": settings.MEDIA_ROOT})]
