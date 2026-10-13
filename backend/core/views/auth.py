@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from django.conf import settings
@@ -31,8 +32,44 @@ class OtpRequestView(APIView):
         return Response({"detail": "Code sent."})
 
 
+def _clean_registration(data):
+    """Validate sign-up details. Runs BEFORE the SMS code is consumed, so a typo never costs a code."""
+    name = (data.get("full_name") or "").strip()
+    role = data.get("role")
+    email = (data.get("email") or "").strip().lower() or None
+    password = data.get("password") or ""
+    if len(name) < 2:
+        raise WorkflowError("Enter your full name.")
+    if role not in ("tenant", "landlord"):
+        raise WorkflowError("Choose whether you are a tenant or a landlord.")
+    if email:
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            raise WorkflowError("Enter a valid email address.")
+        if User.objects.filter(email=email).exists():
+            raise WorkflowError("That email address is already registered.")
+    if password and len(password) < 8:
+        raise WorkflowError("Use a password of at least 8 characters.")
+    return name, role, email, password
+
+
+class RegisterStartView(APIView):
+    """Step 1 of sign-up: check the details and text a code to prove the phone number is theirs."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_scope = "otp"
+
+    def post(self, request):
+        phone = otp.normalize_phone(request.data.get("phone", ""))
+        if User.objects.filter(phone=phone).exists():
+            raise WorkflowError("This phone number already has an account. Please log in instead.")
+        _clean_registration(request.data)
+        otp.request_otp(phone, purpose="register")
+        return Response({"detail": "Code sent."})
+
+
 class OtpVerifyView(APIView):
-    """Log in, or register on first use (needs full_name and role)."""
+    """Log in with a code. For a number with no account yet, the sign-up details are required
+    (sent by the sign-up pages) and the account is created."""
     permission_classes = [AllowAny]
     authentication_classes = []
     throttle_scope = "auth"
@@ -40,13 +77,12 @@ class OtpVerifyView(APIView):
     def post(self, request):
         phone = otp.normalize_phone(request.data.get("phone", ""))
         user = User.objects.filter(phone=phone).first()
-        name = (request.data.get("full_name") or "").strip()
-        role = request.data.get("role")
-        # Check registration details BEFORE consuming the code, so a new user is not
-        # forced to request a second code just to type their name.
-        if not user and (not name or role not in ("tenant", "landlord")):
-            return Response({"detail": "New account: send full_name and role (tenant or landlord).",
-                             "needs_registration": True}, status=400)
+        details = None
+        if not user:
+            if not request.data.get("full_name") and not request.data.get("role"):
+                return Response({"detail": "We could not find an account for this number. Please sign up first.",
+                                 "needs_registration": True}, status=400)
+            details = _clean_registration(request.data)
         otp.verify_otp(phone, request.data.get("code", ""))
         if user:
             if not user.is_active:
@@ -54,8 +90,10 @@ class OtpVerifyView(APIView):
             if not user.phone_verified_at:
                 user.phone_verified_at = timezone.now()
         else:
-            user = User.objects.create_user(phone=phone, full_name=name, role=role,
-                                            phone_verified_at=timezone.now())
+            name, role, email, password = details
+            user = User.objects.create_user(
+                phone=phone, password=password or None, full_name=name, role=role, email=email,
+                whatsapp_opt_in=bool(request.data.get("whatsapp_opt_in")), phone_verified_at=timezone.now())
         user.last_login = timezone.now()
         user.save(update_fields=["last_login", "phone_verified_at"])
         return Response(_tokens(user))

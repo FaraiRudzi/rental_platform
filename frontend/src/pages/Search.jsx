@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import ListingCard from '../components/ListingCard'
@@ -46,6 +46,12 @@ export default function Search() {
     <section className="banner">
       <h1>Find a home you can trust</h1>
       <p>Search verified landlords and checked listings, apply in minutes, and get updates by app, WhatsApp or SMS.</p>
+      {!user && (
+        <div className="row gap wrap" style={{ marginTop: 18 }}>
+          <Link className="btn" to="/register?role=tenant">I am looking for a home</Link>
+          <Link className="btn ghost" to="/register?role=landlord">I have a home to let</Link>
+        </div>
+      )}
     </section>
     <div className="search-layout">
       <form className="filters card" onSubmit={submit}>

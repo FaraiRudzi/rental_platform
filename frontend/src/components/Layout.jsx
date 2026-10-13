@@ -68,7 +68,10 @@ export default function Layout() {
                   <button className="btn ghost" onClick={() => { logout(); nav('/') }}>Log out</button>
                 </>
               ) : (
-                <Link className="btn" to="/login">Log in</Link>
+                <>
+                  <Link className="btn ghost" to="/login">Log in</Link>
+                  <Link className="btn" to="/register">Sign up</Link>
+                </>
               )}
             </div>
           </div>

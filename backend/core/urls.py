@@ -11,6 +11,7 @@ router.register("admin/commission-rules", adm.CommissionRuleViewSet, basename="c
 
 urlpatterns = [
     # --- auth & profile
+    path("auth/register/start/", auth.RegisterStartView.as_view()),
     path("auth/otp/request/", auth.OtpRequestView.as_view()),
     path("auth/otp/verify/", auth.OtpVerifyView.as_view()),
     path("auth/login/", auth.PasswordLoginView.as_view()),

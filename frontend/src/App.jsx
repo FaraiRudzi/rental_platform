@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import Register from './pages/Register'
 import Search from './pages/Search'
 import ListingDetail from './pages/ListingDetail'
 import MyDeals from './pages/MyDeals'
@@ -23,6 +24,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Search />} />
         <Route path="/listings/:id" element={<ListingDetail />} />

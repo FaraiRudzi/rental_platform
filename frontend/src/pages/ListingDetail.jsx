@@ -52,7 +52,13 @@ export default function ListingDetail() {
           <div className="note">If your application is accepted and you confirm, your share of the platform fee is <strong>{money(l.fee_estimate.tenant_fee, l.fee_estimate.currency)}</strong>. The fee is only due after both sides confirm.</div>
         )}
 
-        {!user && <Link className="btn" to="/login">Log in to apply</Link>}
+        {!user && (
+          <div className="stack">
+            <div className="note">Browsing is free. To apply, ask a question or request a viewing, you need a free tenant account.</div>
+            <Link className="btn block" to={`/register?role=tenant&next=/listings/${id}`}>Create a free account to apply</Link>
+            <Link className="btn ghost block" to={`/login?next=/listings/${id}`}>I already have an account</Link>
+          </div>
+        )}
         {user && !isTenant && <p className="muted">Log in with a tenant account to apply.</p>}
         {isTenant && open && (
           <>
