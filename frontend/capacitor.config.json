@@ -1,0 +1,5 @@
+{
+  "appId": "com.yourcompany.rental",
+  "appName": "Rental Platform",
+  "webDir": "dist"
+}
