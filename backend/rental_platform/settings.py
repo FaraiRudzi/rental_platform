@@ -21,8 +21,12 @@ DEBUG = env_bool("DEBUG", True)
 ALLOWED_HOSTS = [h.strip() for h in env("ALLOWED_HOSTS", "*").split(",")]
 
 INSTALLED_APPS = [
+    "django.contrib.admin",
     "django.contrib.contenttypes",
     "django.contrib.auth",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
     "core",
@@ -30,8 +34,28 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",  # DRF views are exempt; this protects the admin site
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+]
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ]
+        },
+    }
 ]
 
 ROOT_URLCONF = "rental_platform.urls"
@@ -57,6 +81,7 @@ LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_TZ = True
 
+STATIC_URL = "/static/"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
@@ -98,9 +123,6 @@ RENTAL = {
         "URL": env("SMS_HTTP_URL"),
         "TOKEN": env("SMS_HTTP_TOKEN"),
         "SENDER": env("SMS_SENDER", "RentalApp"),
-        "TWILIO_ACCOUNT_SID": env("TWILIO_ACCOUNT_SID"),
-        "TWILIO_AUTH_TOKEN": env("TWILIO_AUTH_TOKEN"),
-        "TWILIO_FROM": env("TWILIO_FROM"),
     },
     "WHATSAPP": {
         "ENABLED": env_bool("WHATSAPP_ENABLED", False),

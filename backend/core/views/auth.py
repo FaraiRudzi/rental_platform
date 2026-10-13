@@ -27,12 +27,7 @@ class OtpRequestView(APIView):
     throttle_scope = "otp"
 
     def post(self, request):
-        development_code = otp.request_otp(request.data.get("phone", ""))
-        if development_code:
-            return Response({
-                "detail": "SMS is not configured. Use this development-only code to continue.",
-                "development_code": development_code,
-            })
+        otp.request_otp(request.data.get("phone", ""))
         return Response({"detail": "Code sent."})
 
 

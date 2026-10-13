@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import ListingCard from '../components/ListingCard'
@@ -27,6 +27,7 @@ export default function Search() {
     api('/listings/', { params: query }).then(setData).catch((e) => setMsg({ error: e.message })).finally(() => setLoading(false))
   }, [query])
 
+  const clear = () => { setForm(Object.fromEntries(FILTER_KEYS.map((k) => [k, '']))); setSp({}) }
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? (e.target.checked ? '1' : '') : e.target.value })
   const toggleAmenity = (slug) => {
     const next = selected.includes(slug) ? selected.filter((s) => s !== slug) : [...selected, slug]
@@ -41,35 +42,33 @@ export default function Search() {
   }
 
   return (
+    <>
+    <section className="banner">
+      <h1>Find a home you can trust</h1>
+      <p>Search verified landlords and checked listings, apply in minutes, and get updates by app, WhatsApp or SMS.</p>
+    </section>
     <div className="search-layout">
-      <form className="filters card border-0 shadow-sm" onSubmit={submit}>
-        <div className="filters-header">
-          <div>
-            <p className="eyebrow mb-1">Make it yours</p>
-            <h2>Find your place</h2>
-          </div>
-          <span className="filter-icon" aria-hidden="true">⌕</span>
-        </div>
-        <Field label="Keywords"><input className="form-control" value={form.q} onChange={set('q')} placeholder="Try “garden” or “quiet”" /></Field>
+      <form className="filters card" onSubmit={submit}>
+        <div className="row between"><h2>Filters</h2><button type="button" className="link small" onClick={clear}>Clear all</button></div>
         <Field label="Area">
-          <select className="form-select" value={form.location} onChange={set('location')}>
+          <select value={form.location} onChange={set('location')}>
             <option value="">Any area</option>
             {suburbs.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Field>
         <div className="row gap">
-          <Field label="Min rent"><input className="form-control" type="number" min="0" value={form.min_rent} onChange={set('min_rent')} placeholder="Any" /></Field>
-          <Field label="Max rent"><input className="form-control" type="number" min="0" value={form.max_rent} onChange={set('max_rent')} placeholder="Any" /></Field>
+          <Field label="Min rent"><input type="number" min="0" value={form.min_rent} onChange={set('min_rent')} /></Field>
+          <Field label="Max rent"><input type="number" min="0" value={form.max_rent} onChange={set('max_rent')} /></Field>
         </div>
         <div className="row gap">
           <Field label="Bedrooms">
-            <select className="form-select" value={form.bedrooms} onChange={set('bedrooms')}><option value="">Any</option>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}+</option>)}</select>
+            <select value={form.bedrooms} onChange={set('bedrooms')}><option value="">Any</option>{[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}+</option>)}</select>
           </Field>
           <Field label="Furnishing">
-            <select className="form-select" value={form.furnishing} onChange={set('furnishing')}><option value="">Any</option><option value="furnished">Furnished</option><option value="semi_furnished">Semi</option><option value="unfurnished">Unfurnished</option></select>
+            <select value={form.furnishing} onChange={set('furnishing')}><option value="">Any</option><option value="furnished">Furnished</option><option value="semi_furnished">Semi</option><option value="unfurnished">Unfurnished</option></select>
           </Field>
         </div>
-        <Field label="Property type"><select className="form-select" value={form.type} onChange={set('type')}>{TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+        <Field label="Property type"><select value={form.type} onChange={set('type')}>{TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         <fieldset>
           <legend>Amenities</legend>
           <div className="checks">
@@ -80,29 +79,16 @@ export default function Search() {
         </fieldset>
         <label className="check"><input type="checkbox" checked={!!form.verified} onChange={set('verified')} /> Verified landlords only</label>
         <Field label="Sort by">
-          <select className="form-select" value={form.sort} onChange={set('sort')}><option value="">Newest</option><option value="price_asc">Cheapest</option><option value="price_desc">Most expensive</option></select>
+          <select value={form.sort} onChange={set('sort')}><option value="">Newest</option><option value="price_asc">Cheapest</option><option value="price_desc">Most expensive</option></select>
         </Field>
-        <button className="btn btn-primary w-100">Show homes</button>
-        {user?.role === 'tenant' && <button type="button" className="btn ghost w-100" onClick={saveSearch}>Save search and get alerts</button>}
+        <button className="btn">Search</button>
+        {user?.role === 'tenant' && <button type="button" className="btn ghost" onClick={saveSearch}>Save search and get alerts</button>}
         <Alert error={msg.error} ok={msg.ok} />
       </form>
 
-      <section className="results-panel">
-        <div className="page-header">
-          <div>
-            <p className="eyebrow">A better place to begin</p>
-            <h1>Find your next home</h1>
-            <p className="results-subtitle">Thoughtful spaces, trusted landlords, and a fresh start.</p>
-            {user?.role === 'landlord' && (
-              <Link to="/landlord/new" className="btn btn-primary hero-landlord-cta">+ Add a property</Link>
-            )}
-            {!user && (
-              <Link to="/login?role=landlord" className="btn btn-primary hero-landlord-cta">List your property <span aria-hidden="true">→</span></Link>
-            )}
-          </div>
-          {data && <span className="pill-count">{data.count} found</span>}
-        </div>
-        {loading && <div className="loading-state"><span className="spinner-border spinner-border-sm text-success" role="status" aria-hidden="true" /> Finding homes that feel right…</div>}
+      <section>
+        <div className="row between"><h1>Homes to rent</h1>{data && <span className="muted">{data.count} found</span>}</div>
+        {loading && <p className="muted">Searching…</p>}
         {!loading && data?.count === 0 && <Empty>No homes match. Try a higher budget, fewer filters or another area.</Empty>}
         <div className="grid">{data?.results.map((l) => <ListingCard key={l.id} l={l} />)}</div>
         {data && data.count > 12 && (
@@ -114,5 +100,6 @@ export default function Search() {
         )}
       </section>
     </div>
+    </>
   )
 }

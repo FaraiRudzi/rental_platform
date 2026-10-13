@@ -24,6 +24,8 @@ export default function ListingDetail() {
   const open = l.status === 'published'
 
   return (
+    <>
+    <Link className="back" to="/">← Back to homes</Link>
     <div className="detail">
       <div>
         <div className="gallery">
@@ -79,5 +81,6 @@ export default function ListingDetail() {
         )}
       </aside>
     </div>
+    </>
   )
 }

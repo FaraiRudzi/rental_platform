@@ -12,7 +12,7 @@ from django.utils import timezone
 from core.exceptions import WorkflowError
 from core.models import Application, Invoice, LedgerEntry, Listing, Placement
 from core.services import commission
-from core.services.notifications import notify
+from core.services.notifications import notify, resolve_alerts
 
 R = settings.RENTAL
 
@@ -62,6 +62,7 @@ def withdraw_application(tenant, app):
         raise WorkflowError("This application can no longer be withdrawn.")
     app.status = "withdrawn"
     app.save(update_fields=["status", "updated_at"])
+    resolve_alerts("application", app.id, ["application_received"])
     return app
 
 
@@ -82,6 +83,7 @@ def accept_application(landlord, app_id):
         listing.status = "reserved"
         listing.save(update_fields=["status", "updated_at"])
 
+    resolve_alerts("application", app.id, ["application_received"])
     est = commission.estimate_for_listing(listing)
     fee_txt = f" Your fee share would be {fmt_money(est['tenant_fee'], est['currency'])}." if est else ""
     notify(app.tenant, "application_accepted", "Application accepted",
@@ -101,6 +103,7 @@ def reject_application(landlord, app_id, reason=""):
         raise WorkflowError("This application can no longer be rejected.")
     app.status, app.decided_at, app.decline_reason = "rejected", timezone.now(), reason[:255] or None
     app.save()
+    resolve_alerts("application", app.id, ["application_received"])
     notify(app.tenant, "application_rejected", "Application update",
            f"Your application for {app.listing.title} was not successful.", "application", app.id)
     return app
@@ -116,6 +119,7 @@ def decline_acceptance(tenant, app_id, reason=""):
         app.status, app.decline_reason = "declined", reason[:255] or None
         app.save()
         Listing.objects.filter(pk=app.listing_id, status="reserved").update(status="published")
+    resolve_alerts("application", app.id, ["application_accepted"])
     notify(app.landlord, "acceptance_declined", "Tenant declined",
            f"The tenant declined {app.listing.title}. The listing is open again.", "application", app.id)
     return app
@@ -129,6 +133,7 @@ def expire_application(app):
         app.status = "expired"
         app.save()
         Listing.objects.filter(pk=app.listing_id, status="reserved").update(status="published")
+    resolve_alerts("application", app.id, ["application_accepted", "application_received"])
     notify(app.tenant, "acceptance_expired", "Offer expired",
            "You did not confirm in time, so the offer has lapsed.", "application", app.id)
     notify(app.landlord, "acceptance_expired", "Offer expired",
@@ -178,6 +183,7 @@ def confirm_acceptance(tenant, app_id):
         app.status = "confirmed"
         app.save()
 
+    resolve_alerts("application", app.id, ["application_accepted"])
     for user, amount in ((app.tenant, calc["tenant"]), (app.landlord, calc["landlord"])):
         notify(user, "placement_confirmed", "Placement confirmed",
                f"{listing.title} is confirmed. Your fee share is {fmt_money(amount, listing.currency)}, "
@@ -247,6 +253,7 @@ def cancel_placement(placement, reason, by=None):
         Listing.objects.filter(pk=placement.listing_id, status__in=["reserved", "let"]).update(status="published")
         Application.objects.filter(pk=placement.application_id).update(status="expired")
 
+    resolve_alerts("placement", placement.id, ["placement_confirmed", "contacts_released"])
     for user in (placement.tenant, placement.landlord):
         notify(user, "placement_cancelled", "Placement cancelled",
                f"The placement for {placement.listing.title} was cancelled: {reason}. "

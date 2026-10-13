@@ -48,7 +48,6 @@ export default function ListingForm() {
   return (
     <div className="card narrow wide">
       <h1>{id ? 'Edit listing' : 'Add a listing'}</h1>
-      <p className="muted">New properties are saved as drafts and are not visible to tenants yet. Add at least one photo and submit for admin review. The property appears in search after approval.</p>
       <Alert error={error} />
       {warnings.map((w) => <div key={w} className="alert bad">{w}</div>)}
       <div className="stack">

@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, money, when } from '../api'
 import { useAuth } from '../auth'
-import { Alert, Badge, Empty } from '../components/ui'
+import { Alert, Badge, Empty, PageHeader } from '../components/ui'
 import Placements from '../components/Placements'
 import { useAction, useFetch } from '../hooks'
 
@@ -10,13 +10,13 @@ const TABS = [['applications', 'Applications'], ['listings', 'My listings'], ['e
 
 export default function LandlordDashboard() {
   const { user } = useAuth()
-  const [tab, setTab] = useState('applications')
+  const [sp] = useSearchParams()
+  const [tab, setTab] = useState(TABS.some(([k]) => k === sp.get('tab')) ? sp.get('tab') : 'applications')
   return (
     <div className="stack">
-      <div className="row between">
-        <h1>Dashboard</h1>
+      <PageHeader title={`Welcome, ${user.full_name.split(' ')[0]}`} subtitle="Manage your listings, applicants and fees.">
         <Link className="btn" to="/landlord/new">+ Add listing</Link>
-      </div>
+      </PageHeader>
       {user.verification_status !== 'verified' && (
         <div className="note">Your account is <strong>{user.verification_status}</strong>. Verified landlords get a badge that tenants trust. Upload your ID and proof of ownership via your admin contact.</div>
       )}
@@ -60,25 +60,14 @@ function Applications() {
 function Listings() {
   const { data, error, reload } = useFetch('/landlord/listings/')
   const act = useAction(reload)
-  const nextStep = (status) => {
-    if (status === 'draft') return 'Not public yet. Add at least one photo, edit the listing if needed, then submit it for admin review.'
-    if (status === 'pending_review') return 'Submitted for review. This listing will appear on Find a home after an admin approves it.'
-    if (status === 'rejected') return 'Changes requested. Review the note below, edit the listing, and submit it for review again.'
-    if (status === 'published') return 'Live on Find a home and visible to tenants.'
-    if (status === 'reserved') return 'Reserved while a placement is being completed.'
-    if (status === 'let') return 'This property has been let and is no longer available.'
-    if (status === 'archived') return 'Archived and hidden from tenant search.'
-    return ''
-  }
   return (
     <div className="stack">
       <Alert error={error || act.error} ok={act.ok} />
-      {data?.length === 0 && <Empty>No listings yet. Add your first home to get started.</Empty>}
+      {data?.length === 0 && <Empty>No listings yet. Add your first home.</Empty>}
       {data?.map((l) => (
         <div className="card" key={l.id}>
           <div className="row between"><h3>{l.title}</h3><Badge status={l.status} /></div>
           <p className="muted">{money(l.rent, l.currency)} · {l.bedrooms} bed · {l.address_line} · {l.images.length} photos · {l.application_count} applications</p>
-          <div className={`listing-next-step listing-next-step-${l.status}`}>{nextStep(l.status)}</div>
           {l.rejection_reason && <div className="alert bad">Needs changes: {l.rejection_reason}</div>}
           <div className="row gap wrap">
             {['draft', 'rejected'].includes(l.status) && <Link className="btn ghost" to={`/landlord/edit/${l.id}`}>Edit / add photos</Link>}

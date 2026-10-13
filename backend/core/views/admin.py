@@ -13,7 +13,7 @@ from rest_framework.response import Response
 
 from core.exceptions import WorkflowError
 from core.models import (Application, AuditLog, CommissionRule, CommissionRuleAudit, Invoice, Listing, ListingImage,
-                         Placement, SearchLog, User, VerificationDoc)
+                         Notification, Placement, SearchLog, User, VerificationDoc)
 from core.permissions import IsAdmin
 from core.serializers import (CommissionRuleSerializer, InvoiceSerializer, LandlordListingReadSerializer,
                               PlacementSerializer, UserSerializer)
@@ -176,7 +176,35 @@ def review_listing(request, pk):
     else:
         raise WorkflowError("action must be approve or reject.")
     AuditLog.objects.create(user=request.user, action=f"listing.{action}", entity_type="listing", entity_id=listing.id)
+    # The listing has been dealt with, so its alert disappears for every admin.
+    Notification.objects.filter(event="listing_pending_review", related_type="listing", related_id=listing.id,
+                                read_at__isnull=True).update(read_at=timezone.now(), status="read")
     return Response({"detail": f"Listing {action}d."})
+
+
+@api_view(["GET"])
+@permission_classes([IsAdmin])
+def alerts(request):
+    """Counts for the admin badge. Also creates alerts for any pending listing this admin has not
+    been told about yet (listings submitted before this feature existed, or before this admin joined)."""
+    pending = Listing.objects.filter(status="pending_review")
+    pending_ids = set(pending.values_list("id", flat=True))
+    known = set(Notification.objects.filter(user=request.user, event="listing_pending_review",
+                                            related_id__in=pending_ids).values_list("related_id", flat=True))
+    for listing in pending.filter(id__in=pending_ids - known).select_related("landlord"):
+        notify(request.user, "listing_pending_review", "Listing awaiting review",
+               f"{listing.title} by {listing.landlord.full_name}", "listing", listing.id, external=False)
+    unread = Notification.objects.filter(user=request.user, channel="in_app", event="listing_pending_review",
+                                         read_at__isnull=True).count()
+    return Response({"listing_review_unread": unread, "listing_review_pending": len(pending_ids)})
+
+
+@api_view(["POST"])
+@permission_classes([IsAdmin])
+def mark_listing_alerts_read(request):
+    n = Notification.objects.filter(user=request.user, channel="in_app", event="listing_pending_review",
+                                    read_at__isnull=True).update(read_at=timezone.now(), status="read")
+    return Response({"marked": n})
 
 
 # ------------------------------------------------ placements and money

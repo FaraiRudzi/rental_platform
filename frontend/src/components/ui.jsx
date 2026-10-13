@@ -27,3 +27,15 @@ export function Field({ label, children, hint }) {
     </label>
   )
 }
+
+export function PageHeader({ title, subtitle, children }) {
+  return (
+    <div className="page-header">
+      <div>
+        <h1>{title}</h1>
+        {subtitle && <p className="muted">{subtitle}</p>}
+      </div>
+      {children && <div className="row gap wrap">{children}</div>}
+    </div>
+  )
+}

@@ -20,7 +20,7 @@ CREATE DATABASE rental_platform CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 
 The Django models are mapped onto those tables with `managed = False`: **Django never creates or alters
 your tables**, so `rental_platform_schema.sql` stays the single source of truth. MySQL 8.0.16+ is
-recommended. MariaDB 10.5+ also works.
+recommended. **MariaDB 10.4 (bundled with XAMPP) works with the pinned Django 5.0.x.** Django 5.1 and newer need MariaDB 10.5+ or MySQL 8, so if you upgrade your database you can also upgrade Django.
 
 ## 1. Backend
 
@@ -42,12 +42,7 @@ Notes
 - `mysqlclient` needs a C compiler on Windows. If install fails: `pip install PyMySQL` and uncomment the two
   `pymysql` lines in `backend/rental_platform/__init__.py`.
 - Replace the example city/suburbs with your own launch area. Suburbs are what tenants search by.
-- With `SMS_DRIVER=log` (the development default), no text message is sent; the OTP is shown in the
-  signup page and printed in the Django terminal. For other providers, use Twilio as described below,
-  or set `SMS_DRIVER=http` and adapt `core/services/sms.py` to the provider's API format.
-- For Twilio, set `SMS_DRIVER=twilio` and configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and
-  `TWILIO_FROM` in `backend/.env`. `TWILIO_FROM` must be a sender authorized for your Twilio account.
-  Restart Django after changing `.env`. Never commit the real `.env` or share its credentials.
+- OTP codes are printed in the terminal while `SMS_DRIVER=log` (development).
 - `CELERY_EAGER=True` runs background jobs inline, so you do not need Redis to start.
 
 ### Production background work
@@ -66,10 +61,6 @@ npm install
 npm run dev          # http://localhost:5173  (proxies /api and /media to Django on :8000)
 ```
 
-The admin dashboard is part of the frontend: open `http://localhost:5173/admin` and sign in with
-the account created by `python manage.py create_admin`. Django on port 8000 serves the API and
-media files; it does not provide a Django admin site at `/admin/`.
-
 ## 3. First run, end to end
 
 1. Log in at `/login` with the admin phone and password (use the "Admin? Log in with password" link).
@@ -83,6 +74,27 @@ media files; it does not provide a Django admin site at `/admin/`.
 6. Tenant: **My applications > Confirm**. The fee is calculated, snapshotted and two invoices are created.
 7. Both pay (**Pay now**). In development, simulate the gateway callback or use **Admin > Placements >
    Record cash payment**. When both are paid the contacts and address unlock.
+
+## 3b. Creating accounts in Django admin (admins, landlords, tenants)
+
+1. Make sure an admin exists: `python manage.py create_admin +263771234567 "Your Name" --password "ChangeMe!234"`
+2. Open **http://127.0.0.1:8000/admin/** and log in with that **phone number** and password.
+3. **Users > Add user.** Enter the phone in international format (`+263...`), full name, role
+   (`tenant`, `landlord` or `admin`) and a password (at least 8 characters). Set verification to `verified`
+   for a landlord if you want the "Verified" badge. Admins must have a password; tenants and landlords may
+   leave it blank and use SMS-code login instead.
+4. Log in to the React app (`http://localhost:5173/login`) with the phone and password via the
+   **"Have a password? Log in with it"** link. You land on that role's dashboard: tenant `/`
+   (then "My applications"), landlord `/landlord`, admin `/admin`.
+
+Django admin also lets you add locations (cities and suburbs) and amenities, and browse listings,
+applications, placements, invoices, payments, the ledger and notifications read-only. Accounts cannot be
+deleted (they own money records); use the **Suspend** action instead.
+
+**Upgrading an existing install:** after copying these files, delete `backend/core/migrations/0001_initial.py`
+(keep `__init__.py`), then run `python manage.py makemigrations core` and `python manage.py migrate`.
+This is needed once because the admin's log table has a foreign key to `users`, and its column type must
+match the unsigned `users.id`.
 
 ## 4. How the money works
 

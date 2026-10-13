@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { api, money, when } from '../api'
-import { Alert, Badge, Empty } from '../components/ui'
+import { Alert, Badge, Empty, PageHeader } from '../components/ui'
 import Placements from '../components/Placements'
 import { useAction, useFetch } from '../hooks'
 
@@ -11,7 +11,7 @@ export default function MyDeals() {
 
   return (
     <div className="stack">
-      <h1>My applications</h1>
+      <PageHeader title="My applications" subtitle="Track every home you applied for, confirm offers and pay your share." />
       <Alert error={apps.error || act.error} ok={act.ok} />
       {apps.data?.length === 0 && <Empty>You have not applied for any homes yet. <Link to="/">Find a home</Link></Empty>}
       {apps.data?.map((a) => (

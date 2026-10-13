@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from core.exceptions import WorkflowError
 from core.models import AuditLog, FeeAdjustment, Invoice, LedgerEntry, Payment, Placement
-from core.services.notifications import notify
+from core.services.notifications import notify, resolve_alerts
 from core.services.workflow import fmt_money, refresh_payment_status
 
 
@@ -63,6 +63,7 @@ def record_payment_success(payment, payload=None):
             note=f"Payment {payment.gateway_reference}")
         placement = Placement.objects.select_for_update().get(pk=invoice.placement_id)
         refresh_payment_status(placement)
+    resolve_alerts("placement", invoice.placement_id, ["placement_confirmed"], user=invoice.payer)
     notify(invoice.payer, "payment_received", "Payment received",
            f"We received {fmt_money(payment.amount, payment.currency)} for {invoice.invoice_no}.",
            "invoice", invoice.id)

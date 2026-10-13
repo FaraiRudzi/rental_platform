@@ -138,9 +138,18 @@ class SavedSearchViewSet(viewsets.ModelViewSet):
 
 @api_view(["GET"])
 def my_notifications(request):
-    qs = Notification.objects.filter(user=request.user, channel="in_app")[:50]
-    unread = Notification.objects.filter(user=request.user, channel="in_app", read_at__isnull=True).count()
-    return Response({"unread": unread, "results": NotificationSerializer(qs, many=True).data})
+    """Unread alerts always come first and are never cut off; recent read ones follow."""
+    base = Notification.objects.filter(user=request.user, channel="in_app")
+    unread_qs = base.filter(read_at__isnull=True)
+    items = list(unread_qs.order_by("-created_at")[:100]) + list(base.filter(read_at__isnull=False).order_by("-created_at")[:30])
+    return Response({"unread": unread_qs.count(), "results": NotificationSerializer(items, many=True).data})
+
+
+@api_view(["POST"])
+def mark_all_notifications_read(request):
+    n = Notification.objects.filter(user=request.user, channel="in_app", read_at__isnull=True) \
+        .update(read_at=timezone.now(), status="read")
+    return Response({"marked": n})
 
 
 @api_view(["POST"])

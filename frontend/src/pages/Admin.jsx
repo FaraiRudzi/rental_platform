@@ -1,19 +1,48 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api, money, when } from '../api'
-import { Alert, Badge, Empty, Field } from '../components/ui'
+import { Alert, Badge, Empty, Field, PageHeader } from '../components/ui'
 import { useAction, useFetch } from '../hooks'
 
 const TABS = [['stats', 'Overview'], ['rules', 'Fee rules'], ['listings', 'Listing review'], ['users', 'Users'], ['placements', 'Placements']]
 
 export default function Admin() {
-  const [tab, setTab] = useState('stats')
+  const [sp] = useSearchParams()
+  const [tab, setTab] = useState(TABS.some(([k]) => k === sp.get('tab')) ? sp.get('tab') : 'stats')
+  const [alerts, setAlerts] = useState({ listing_review_unread: 0, listing_review_pending: 0 })
+  const [reviewKey, setReviewKey] = useState(0)
+  const loadAlerts = () => api('/admin/alerts/').then(setAlerts).catch(() => {})
+
+  useEffect(() => {
+    loadAlerts()
+    const id = setInterval(loadAlerts, 30000)
+    window.addEventListener('rp:refresh-alerts', loadAlerts) // alerts read elsewhere clear this badge too
+    return () => { clearInterval(id); window.removeEventListener('rp:refresh-alerts', loadAlerts) }
+  }, [])
+
+  // Opening the Listing review tab reads the alert, so the badge disappears.
+  useEffect(() => {
+    if (tab === 'listings' && alerts.listing_review_unread > 0) {
+      api('/admin/alerts/listing-review/read/', { method: 'POST' })
+        .then(() => { setReviewKey((k) => k + 1); loadAlerts(); window.dispatchEvent(new Event('rp:refresh-alerts')) })
+        .catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, alerts.listing_review_unread])
+
   return (
     <div className="stack">
-      <h1>Admin</h1>
-      <div className="tabs">{TABS.map(([k, l]) => <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}</div>
+      <PageHeader title="Admin console" subtitle="Fees, listings, people and payments." />
+      <div className="tabs">
+        {TABS.map(([k, l]) => (
+          <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+            {l}{k === 'listings' && alerts.listing_review_unread > 0 && <span className="dot">{alerts.listing_review_unread}</span>}
+          </button>
+        ))}
+      </div>
       {tab === 'stats' && <Stats />}
       {tab === 'rules' && <Rules />}
-      {tab === 'listings' && <ListingReview />}
+      {tab === 'listings' && <ListingReview key={reviewKey} />}
       {tab === 'users' && <Users />}
       {tab === 'placements' && <AdminPlacements />}
     </div>

@@ -19,6 +19,7 @@ urlpatterns = [
     path("me/devices/", auth.device_token),
     path("me/verification-docs/", auth.verification_docs),
     path("me/notifications/", tenant.my_notifications),
+    path("me/notifications/read-all/", tenant.mark_all_notifications_read),
     path("me/notifications/<int:pk>/read/", tenant.mark_notification_read),
 
     # --- public search
@@ -63,6 +64,8 @@ urlpatterns = [
 
     # --- admin
     path("admin/stats/", adm.stats),
+    path("admin/alerts/", adm.alerts),
+    path("admin/alerts/listing-review/read/", adm.mark_listing_alerts_read),
     path("admin/users/", adm.users),
     path("admin/users/<int:pk>/verification/", adm.set_user_verification),
     path("admin/users/<int:pk>/status/", adm.set_user_status),

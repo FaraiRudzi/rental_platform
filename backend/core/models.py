@@ -14,6 +14,14 @@ from django.db import models
 from django.utils import timezone
 
 
+class UnsignedBigAutoField(models.BigAutoField):
+    """users.id is BIGINT UNSIGNED. Tables Django itself creates with a foreign key to users
+    (django_admin_log) must use the same column type, or MySQL/MariaDB rejects the constraint."""
+
+    def rel_db_type(self, connection):
+        return "bigint UNSIGNED"
+
+
 class Unmanaged(models.Model):
     class Meta:
         abstract = True
@@ -41,6 +49,7 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, Unmanaged):
+    id = UnsignedBigAutoField(primary_key=True)
     role = models.CharField(max_length=10)  # tenant | landlord | admin
     full_name = models.CharField(max_length=150)
     phone = models.CharField(max_length=20, unique=True)
@@ -68,6 +77,24 @@ class User(AbstractBaseUser, Unmanaged):
     @property
     def is_admin(self):
         return self.role == "admin"
+
+    # --- what Django's admin site needs. Admins (role = 'admin') get full access.
+    @property
+    def is_staff(self):
+        return self.role == "admin" and self.is_active
+
+    @property
+    def is_superuser(self):
+        return self.role == "admin"
+
+    def has_perm(self, perm, obj=None):
+        return self.is_active and self.role == "admin"
+
+    def has_perms(self, perm_list, obj=None):
+        return all(self.has_perm(p, obj) for p in perm_list)
+
+    def has_module_perms(self, app_label):
+        return self.is_active and self.role == "admin"
 
     @property
     def is_verified(self):

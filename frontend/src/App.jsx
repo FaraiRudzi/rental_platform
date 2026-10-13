@@ -22,10 +22,10 @@ function Require({ roles, children }) {
 export default function App() {
   return (
     <Routes>
+      <Route path="/login" element={<Login />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Search />} />
         <Route path="/listings/:id" element={<ListingDetail />} />
-        <Route path="/login" element={<Login />} />
         <Route path="/notifications" element={<Require roles={['tenant', 'landlord', 'admin']}><Notifications /></Require>} />
 
         <Route path="/deals" element={<Require roles={['tenant']}><MyDeals /></Require>} />

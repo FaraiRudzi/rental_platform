@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { api } from '../api'
-import { Alert, Empty } from '../components/ui'
+import { Alert, Empty, PageHeader } from '../components/ui'
 import { useAction, useFetch } from '../hooks'
 
 export default function SavedSearches() {
@@ -10,7 +10,7 @@ export default function SavedSearches() {
 
   return (
     <div className="stack">
-      <h1>Saved searches</h1>
+      <PageHeader title="Saved searches" subtitle="We alert you when a new home matches." />
       <Alert error={error || act.error} />
       {data?.length === 0 && <Empty>No saved searches yet. Use "Save search" on the <Link to="/">search page</Link>.</Empty>}
       {data?.map((s) => (

@@ -4,12 +4,10 @@ import re
 import secrets
 from datetime import timedelta
 
-import requests
 from django.conf import settings
-from django.db import transaction
 from django.utils import timezone
 
-from core.exceptions import SmsDeliveryError, WorkflowError
+from core.exceptions import WorkflowError
 from core.models import OtpCode
 from core.services.sms import send_sms
 
@@ -27,25 +25,16 @@ def _hash(phone: str, code: str) -> str:
     return hmac.new(settings.SECRET_KEY.encode(), f"{phone}:{code}".encode(), hashlib.sha256).hexdigest()
 
 
-def request_otp(phone: str, purpose: str = "login") -> str | None:
+def request_otp(phone: str, purpose: str = "login") -> None:
     phone = normalize_phone(phone)
     recent = OtpCode.objects.filter(phone=phone, created_at__gte=timezone.now() - timedelta(seconds=45)).exists()
     if recent:
         raise WorkflowError("Please wait a moment before requesting another code.")
     code = f"{secrets.randbelow(10**6):06d}"
-    with transaction.atomic():
-        OtpCode.objects.create(
-            phone=phone, code_hash=_hash(phone, code), purpose=purpose,
-            expires_at=timezone.now() + timedelta(minutes=R["OTP_TTL_MINUTES"]))
-        try:
-            delivery = send_sms(
-                phone,
-                f"Your Rental Platform code is {code}. It expires in {R['OTP_TTL_MINUTES']} minutes.")
-        except requests.RequestException as exc:
-            raise SmsDeliveryError("The SMS provider could not deliver your code. Please try again.") from exc
-    if settings.DEBUG and delivery == "logged":
-        return code
-    return None
+    OtpCode.objects.create(
+        phone=phone, code_hash=_hash(phone, code), purpose=purpose,
+        expires_at=timezone.now() + timedelta(minutes=R["OTP_TTL_MINUTES"]))
+    send_sms(phone, f"Your Rental Platform code is {code}. It expires in {R['OTP_TTL_MINUTES']} minutes.")
 
 
 def verify_otp(phone: str, code: str) -> str:

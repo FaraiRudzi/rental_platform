@@ -13,12 +13,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from core.exceptions import WorkflowError
-from core.models import Application, Enquiry, Listing, ListingImage, Viewing
+from core.models import Application, Enquiry, Listing, ListingImage, User, Viewing
 from core.permissions import IsLandlord
 from core.serializers import (ApplicationSerializer, EnquirySerializer, LandlordListingReadSerializer,
                               LandlordListingWriteSerializer, ViewingSerializer)
 from core.services import workflow
-from core.services.notifications import notify
+from core.services.notifications import notify, resolve_alerts
 from core.views.public import listing_queryset
 
 MAX_IMAGES = 12
@@ -69,6 +69,9 @@ def submit_listing(request, pk):
         raise WorkflowError("Add at least one photo before submitting.")
     listing.status, listing.rejection_reason = "pending_review", None
     listing.save(update_fields=["status", "rejection_reason", "updated_at"])
+    for admin_user in User.objects.filter(role="admin", status="active"):
+        notify(admin_user, "listing_pending_review", "Listing awaiting review",
+               f"{listing.title} by {request.user.full_name}", "listing", listing.id, external=False)
     return Response({"detail": "Submitted for review."})
 
 
@@ -178,6 +181,7 @@ def reply_enquiry(request, pk):
         raise WorkflowError("Write a reply.")
     enq.reply, enq.status = reply[:2000], "replied"
     enq.save(update_fields=["reply", "status"])
+    resolve_alerts("enquiry", enq.id, ["enquiry_received"])
     notify(enq.tenant, "enquiry_replied", "The landlord replied", reply[:140], "enquiry", enq.id)
     return Response(EnquirySerializer(enq).data)
 
@@ -200,6 +204,7 @@ def update_viewing(request, pk):
     if new_status == "confirmed":
         v.confirmed_at = timezone.now()
     v.save(update_fields=["status", "confirmed_at"])
+    resolve_alerts("viewing", v.id, ["viewing_requested"])
     notify(v.tenant, "viewing_updated", "Viewing update",
            f"Your viewing of {v.listing.title} is now {new_status}.", "viewing", v.id)
     return Response(ViewingSerializer(v).data)

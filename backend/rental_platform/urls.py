@@ -1,8 +1,12 @@
 from django.conf import settings
+from django.contrib import admin
 from django.urls import include, path, re_path
 from django.views.static import serve
 
-urlpatterns = [path("api/", include("core.urls"))]
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("api/", include("core.urls")),
+]
 
 if settings.DEBUG:
     # Development only. Only listing photos are public; private/ (ID documents) is NOT exposed.
