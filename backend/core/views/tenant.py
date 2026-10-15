@@ -65,7 +65,7 @@ def create_viewing(request, pk):
 @permission_classes([IsTenant])
 def my_applications(request):
     qs = (Application.objects.filter(tenant=request.user)
-          .select_related("listing", "tenant", "placement").order_by("-id")[:100])
+          .select_related("listing", "tenant", "placement").prefetch_related("tenant__verification_docs").order_by("-id")[:100])
     return Response(ApplicationSerializer(qs, many=True).data)
 
 

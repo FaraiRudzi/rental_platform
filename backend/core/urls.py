@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from core.views import admin as adm
-from core.views import auth, billing, landlord, public, tenant, webhooks
+from core.views import auth, billing, landlord, public, site, tenant, verification, webhooks
 
 router = DefaultRouter(trailing_slash=True)
 router.register("me/saved-searches", tenant.SavedSearchViewSet, basename="saved-search")
@@ -11,14 +11,23 @@ router.register("admin/commission-rules", adm.CommissionRuleViewSet, basename="c
 
 urlpatterns = [
     # --- auth & profile
-    path("auth/register/start/", auth.RegisterStartView.as_view()),
-    path("auth/otp/request/", auth.OtpRequestView.as_view()),
-    path("auth/otp/verify/", auth.OtpVerifyView.as_view()),
-    path("auth/login/", auth.PasswordLoginView.as_view()),
+    path("auth/register/", auth.RegisterView.as_view()),
+    path("auth/social/", auth.SocialLoginView.as_view()),
+    path("auth/social/complete/", auth.SocialCompleteView.as_view()),
+    path("auth/forgot/", auth.ForgotPasswordView.as_view()),
+    path("auth/reset/", auth.ResetPasswordView.as_view()),
+    path("me/password/", auth.ChangePasswordView.as_view()),
+    path("site/", site.public_site),
+    path("admin/settings/", site.admin_settings),
+    path("admin/settings/image/<str:key>/", site.admin_setting_image),
+    path("auth/login/", auth.LoginView.as_view()),
     path("auth/token/refresh/", TokenRefreshView.as_view()),
     path("me/", auth.MeView.as_view()),
     path("me/devices/", auth.device_token),
-    path("me/verification-docs/", auth.verification_docs),
+    path("me/verification/", verification.my_verification),
+    path("me/verification-docs/", verification.verification_docs),
+    path("me/verification-docs/<int:pk>/", verification.delete_doc),
+    path("me/verification-docs/<int:pk>/file/", verification.my_doc_file),
     path("me/notifications/", tenant.my_notifications),
     path("me/notifications/read-all/", tenant.mark_all_notifications_read),
     path("me/notifications/<int:pk>/read/", tenant.mark_notification_read),
@@ -70,6 +79,8 @@ urlpatterns = [
     path("admin/users/", adm.users),
     path("admin/users/<int:pk>/verification/", adm.set_user_verification),
     path("admin/users/<int:pk>/status/", adm.set_user_status),
+    path("admin/verification/", adm.verification_queue),
+    path("admin/alerts/verification/read/", adm.mark_verification_alerts_read),
     path("admin/verification-docs/", adm.verification_docs),
     path("admin/verification-docs/<int:pk>/file/", adm.verification_doc_file),
     path("admin/verification-docs/<int:pk>/review/", adm.review_doc),

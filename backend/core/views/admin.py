@@ -18,8 +18,10 @@ from core.permissions import IsAdmin
 from core.serializers import (CommissionRuleSerializer, InvoiceSerializer, LandlordListingReadSerializer,
                               PlacementSerializer, UserSerializer)
 from core.services import billing, workflow
+from core.services import verification as vs
+from core.views.verification import doc_dict, serve_doc
 from core.services.alerts import match_saved_searches
-from core.services.notifications import notify
+from core.services.notifications import notify, resolve_alerts
 from core.views.public import listing_queryset
 
 
@@ -86,7 +88,9 @@ def set_user_verification(request, pk):
     user.save(update_fields=["verification_status"])
     AuditLog.objects.create(user=request.user, action="user.verification", entity_type="user", entity_id=user.id,
                             old_values={"status": old}, new_values={"status": new})
-    notify(user, "verification_updated", "Verification update", f"Your verification status is now: {new}.", "user", user.id)
+    note = (request.data.get("note") or "").strip()
+    notify(user, "verification_updated", "Verification update",
+           f"Your verification status is now: {new}." + (f" {note}" if note else ""), "user", user.id)
     return Response(UserSerializer(user).data)
 
 
@@ -117,24 +121,75 @@ def verification_docs(request):
 @api_view(["GET"])
 @permission_classes([IsAdmin])
 def verification_doc_file(request, pk):
-    """Documents are private: only admins can open them, through this view."""
-    doc = get_object_or_404(VerificationDoc, pk=pk)
-    if not default_storage.exists(doc.file_path):
-        raise Http404()
-    return FileResponse(default_storage.open(doc.file_path, "rb"))
+    """Documents are private: only admins (and the owner) can open them, through authenticated views."""
+    return serve_doc(get_object_or_404(VerificationDoc, pk=pk))
 
 
 @api_view(["POST"])
 @permission_classes([IsAdmin])
 def review_doc(request, pk):
-    doc = get_object_or_404(VerificationDoc, pk=pk)
+    doc = get_object_or_404(VerificationDoc.objects.select_related("user"), pk=pk)
     new = request.data.get("status")
     if new not in ("approved", "rejected"):
         raise WorkflowError("Status must be approved or rejected.")
+    note = (request.data.get("note") or "").strip()
+    if new == "rejected" and not note:
+        raise WorkflowError("Tell the user why this document was rejected, so they can upload a better one.")
     doc.status, doc.reviewed_by, doc.reviewed_at = new, request.user, timezone.now()
-    doc.review_note = (request.data.get("note") or "")[:255] or None
+    doc.review_note = note[:255] or None
     doc.save()
-    return Response({"detail": "Saved."})
+    user = doc.user
+    before = user.verification_status
+    after = vs.recompute_status(user)
+    AuditLog.objects.create(user=request.user, action=f"document.{new}", entity_type="verification_doc", entity_id=doc.id,
+                            new_values={"user_id": user.id, "doc_type": doc.doc_type, "note": note})
+    label = vs.DOC_LABELS.get(doc.doc_type, doc.doc_type)
+    if new == "approved":
+        body = f"Your {label} was approved."
+        if after == "verified" and before != "verified":
+            body += " Your account is now verified."
+        notify(user, "document_approved", "Document approved", body, "user", user.id)
+    else:
+        notify(user, "document_rejected", "Document needs attention",
+               f"Your {label} was not accepted: {note} Please upload a corrected or clearer copy.", "user", user.id)
+    if not VerificationDoc.objects.filter(user=user, status="pending").exists():
+        resolve_alerts("user", user.id, ["verification_pending"])
+    return Response({"detail": "Saved.", "user_status": after})
+
+
+@api_view(["GET"])
+@permission_classes([IsAdmin])
+def verification_queue(request):
+    """People with documents, oldest waiting first. ?status=pending (default) | reviewed | all"""
+    mode = request.query_params.get("status", "pending")
+    pending_first = {}
+    for d in VerificationDoc.objects.filter(status="pending").order_by("id"):
+        pending_first.setdefault(d.user_id, d.id)
+    if mode == "pending":
+        ids = sorted(pending_first, key=pending_first.get)
+    else:
+        ids = []
+        for uid in VerificationDoc.objects.order_by("-id").values_list("user_id", flat=True)[:400]:
+            if uid not in ids and not (mode == "reviewed" and uid in pending_first):
+                ids.append(uid)
+        ids = ids[:60]
+    users = {u.id: u for u in User.objects.filter(id__in=ids)}
+    docs_by_user = {}
+    for d in VerificationDoc.objects.filter(user_id__in=ids).order_by("-id"):
+        docs_by_user.setdefault(d.user_id, []).append(d)
+    out = []
+    for uid in ids:
+        u, docs = users.get(uid), docs_by_user.get(uid, [])
+        if not u:
+            continue
+        out.append({
+            "user": {"id": u.id, "name": u.full_name, "role": u.role, "phone": u.phone, "email": u.email,
+                     "verification_status": u.verification_status, "created_at": u.created_at},
+            "checks": vs.summarize(u, docs),
+            "docs": [doc_dict(d) for d in docs],
+            "pending_count": sum(1 for d in docs if d.status == "pending"),
+        })
+    return Response(out)
 
 
 # ---------------------------------------------------------- listings
@@ -185,8 +240,8 @@ def review_listing(request, pk):
 @api_view(["GET"])
 @permission_classes([IsAdmin])
 def alerts(request):
-    """Counts for the admin badge. Also creates alerts for any pending listing this admin has not
-    been told about yet (listings submitted before this feature existed, or before this admin joined)."""
+    """Counts for the admin tab badges. Also creates alerts for anything pending that this admin has not
+    been told about yet (submitted before this feature existed, or before this admin joined)."""
     pending = Listing.objects.filter(status="pending_review")
     pending_ids = set(pending.values_list("id", flat=True))
     known = set(Notification.objects.filter(user=request.user, event="listing_pending_review",
@@ -194,15 +249,33 @@ def alerts(request):
     for listing in pending.filter(id__in=pending_ids - known).select_related("landlord"):
         notify(request.user, "listing_pending_review", "Listing awaiting review",
                f"{listing.title} by {listing.landlord.full_name}", "listing", listing.id, external=False)
-    unread = Notification.objects.filter(user=request.user, channel="in_app", event="listing_pending_review",
-                                         read_at__isnull=True).count()
-    return Response({"listing_review_unread": unread, "listing_review_pending": len(pending_ids)})
+
+    pending_users = set(VerificationDoc.objects.filter(status="pending").values_list("user_id", flat=True))
+    known_users = set(Notification.objects.filter(user=request.user, event="verification_pending",
+                                                  related_id__in=pending_users).values_list("related_id", flat=True))
+    for u in User.objects.filter(id__in=pending_users - known_users):
+        notify(request.user, "verification_pending", "Documents awaiting review",
+               f"{u.full_name} ({u.role}) uploaded documents.", "user", u.id, external=False)
+
+    def unread(event):
+        return Notification.objects.filter(user=request.user, channel="in_app", event=event,
+                                           read_at__isnull=True).count()
+    return Response({"listing_review_unread": unread("listing_pending_review"), "listing_review_pending": len(pending_ids),
+                     "verification_unread": unread("verification_pending"), "verification_pending": len(pending_users)})
 
 
 @api_view(["POST"])
 @permission_classes([IsAdmin])
 def mark_listing_alerts_read(request):
     n = Notification.objects.filter(user=request.user, channel="in_app", event="listing_pending_review",
+                                    read_at__isnull=True).update(read_at=timezone.now(), status="read")
+    return Response({"marked": n})
+
+
+@api_view(["POST"])
+@permission_classes([IsAdmin])
+def mark_verification_alerts_read(request):
+    n = Notification.objects.filter(user=request.user, channel="in_app", event="verification_pending",
                                     read_at__isnull=True).update(read_at=timezone.now(), status="read")
     return Response({"marked": n})
 

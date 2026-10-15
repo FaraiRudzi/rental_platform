@@ -1,5 +1,7 @@
-import { Link } from 'react-router-dom'
-import { money } from '../api'
+'use client'
+
+import Link from '@/components/Link'
+import { money } from '@/lib/api'
 
 export default function ListingCard({ l }) {
   return (

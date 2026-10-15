@@ -2,6 +2,7 @@ import hashlib
 import io
 import uuid
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.shortcuts import get_object_or_404
@@ -67,6 +68,9 @@ def submit_listing(request, pk):
         raise WorkflowError("This listing has already been submitted.")
     if not listing.images.exists():
         raise WorkflowError("Add at least one photo before submitting.")
+    if settings.RENTAL["REQUIRE_VERIFIED_LANDLORD"] and request.user.verification_status not in ("verified", "pending"):
+        raise WorkflowError("Upload your ID and ownership documents on the Verification page first, "
+                            "so we can check them before your listing goes live.")
     listing.status, listing.rejection_reason = "pending_review", None
     listing.save(update_fields=["status", "rejection_reason", "updated_at"])
     for admin_user in User.objects.filter(role="admin", status="active"):
@@ -145,7 +149,8 @@ def delete_image(request, pk, image_id):
 @api_view(["GET"])
 @permission_classes([IsLandlord])
 def applications(request):
-    qs = Application.objects.filter(landlord=request.user).select_related("listing", "tenant", "placement")
+    qs = (Application.objects.filter(landlord=request.user).select_related("listing", "tenant", "placement")
+          .prefetch_related("tenant__verification_docs"))
     if s := request.query_params.get("status"):
         qs = qs.filter(status=s)
     return Response(ApplicationSerializer(qs.order_by("-id")[:200], many=True).data)

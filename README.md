@@ -6,7 +6,7 @@ platform earns a **placement fee split between both sides**, calculated from the
 
 ```
 backend/    Django 5 + Django REST Framework + Celery   (talks to your existing MySQL database)
-frontend/   React 18 + Vite                             (tenant, landlord and admin screens)
+frontend/   Next.js 14 (React 18)                       (tenant, landlord and admin screens)
 ```
 
 ## 0. Database name
@@ -42,7 +42,8 @@ Notes
 - `mysqlclient` needs a C compiler on Windows. If install fails: `pip install PyMySQL` and uncomment the two
   `pymysql` lines in `backend/rental_platform/__init__.py`.
 - Replace the example city/suburbs with your own launch area. Suburbs are what tenants search by.
-- OTP codes are printed in the terminal while `SMS_DRIVER=log` (development).
+- Everyone logs in with **email or phone + password**. There are no SMS codes. Password-reset emails are printed in the
+  backend window while `EMAIL_BACKEND` is the console backend (development); set the `EMAIL_*` values for real email.
 - `CELERY_EAGER=True` runs background jobs inline, so you do not need Redis to start.
 
 ### Production background work
@@ -53,48 +54,133 @@ celery -A rental_platform beat   -l info     # runs deadline checks every 15 min
 ```
 Set `CELERY_EAGER=False` and `REDIS_URL` in production.
 
-## 2. Frontend
+## 2. Frontend (Next.js)
 
 ```bash
 cd frontend
 npm install
-npm run dev          # http://localhost:5173  (proxies /api and /media to Django on :8000)
+npm run dev          # http://localhost:5173
 ```
+Needs Node.js 18.17 or newer. The site is Next.js 14 (App Router, React 18). The website forwards `/api/*` and
+`/media/*` to Django (`API_INTERNAL_URL`, default `http://127.0.0.1:8000`; see `frontend/.env.example`), so the browser only
+ever talks to the website. Branding (logo, colours, wording) is read from the backend on every request, so changes made in
+**Admin > Settings** show immediately. For a production build: `npm run build`, then `npm run start`.
 
 ## 3. First run, end to end
 
-1. Log in at `/login` with the admin phone and password (use the "Admin? Log in with password" link).
+1. Log in at `/login` with the admin email (or phone) and password you gave `create_admin`.
    Open **Admin > Fee rules** and check the starter rule (10%, 60/40). Edit it if you want.
-2. Open a private window, sign up as a **landlord** (OTP appears in the Django terminal). Add a listing with
-   a photo and submit it for review.
-3. As admin: **Admin > Listing review > Approve**. The listing is now public.
+2. Open a private window and sign up as a **landlord** at `/register`. You are sent to the Verification page: upload ID and
+   ownership documents. Then add a listing with a photo and submit it for review.
+3. As admin: **Admin > Verification** (approve the documents) and **Admin > Listing review > Approve**.
 4. Sign up as a **tenant** in another window, find the listing, and apply.
-5. Landlord: **Applications > Accept**. The tenant gets an in-app alert, push (if FCM set up), WhatsApp
-   (if set up) and an SMS fallback.
-6. Tenant: **My applications > Confirm**. The fee is calculated, snapshotted and two invoices are created.
-7. Both pay (**Pay now**). In development, simulate the gateway callback or use **Admin > Placements >
-   Record cash payment**. When both are paid the contacts and address unlock.
+5. Landlord: **Applications > Accept**. The tenant gets an in-app alert, push (if FCM is set up), WhatsApp (if set up) and an
+   SMS fallback.
+6. Tenant: **My applications > Confirm and continue**. The fee is calculated, snapshotted and two invoices are created.
+7. Both pay (**Pay now**). In development use **Admin > Placements > Record cash payment**. When both are paid the contacts
+   and address unlock.
 
 ## 3b. Creating accounts in Django admin (admins, landlords, tenants)
 
-1. Make sure an admin exists: `python manage.py create_admin +263771234567 "Your Name" --password "ChangeMe!234"`
+1. Make sure an admin exists: `create_admin.bat` (or `python manage.py create_admin +263771234567 "Your Name" --password "..." --email you@example.com`).
 2. Open **http://127.0.0.1:8000/admin/** and log in with that **phone number** and password.
-3. **Users > Add user.** Enter the phone in international format (`+263...`), full name, role
-   (`tenant`, `landlord` or `admin`) and a password (at least 8 characters). Set verification to `verified`
-   for a landlord if you want the "Verified" badge. Admins must have a password; tenants and landlords may
-   leave it blank and use SMS-code login instead.
-4. Log in to the React app (`http://localhost:5173/login`) with the phone and password via the
-   **"Have a password? Log in with it"** link. You land on that role's dashboard: tenant `/`
-   (then "My applications"), landlord `/landlord`, admin `/admin`.
+3. **Users > Add user.** Enter the phone in international format (`+263...`), full name, email (required for tenants and
+   landlords), role and a password (at least 8 characters). Everyone logs in with a password, so tell the person what it is;
+   they can change it under **My account**.
+4. Log in to the website (`http://localhost:5173/login`) with the email or phone plus the password.
 
-Django admin also lets you add locations (cities and suburbs) and amenities, and browse listings,
-applications, placements, invoices, payments, the ledger and notifications read-only. Accounts cannot be
-deleted (they own money records); use the **Suspend** action instead.
+Django admin also lets you add locations and amenities, and browse listings, applications, placements, invoices, payments, the
+ledger, notifications and verification documents read-only. Accounts cannot be deleted (they own money records); use **Suspend**.
 
-**Upgrading an existing install:** after copying these files, delete `backend/core/migrations/0001_initial.py`
-(keep `__init__.py`), then run `python manage.py makemigrations core` and `python manage.py migrate`.
-This is needed once because the admin's log table has a foreign key to `users`, and its column type must
-match the unsigned `users.id`.
+## 3c. Branding and theme
+
+Everything below can be changed from **Admin > Settings** without touching any file (see 3g). The defaults live in
+`frontend/public/` (`logo.png`, `logo-white.png`, `logo-mark.png`, `favicon.png`, `login-bg.jpg`) and in the variables at the top
+of `frontend/src/app/globals.css`. The theme is light-only on purpose, because a logo with dark lettering would disappear on a
+dark background.
+
+**Alerts** clear when read, when you click "Mark all as read", and automatically once the item they point at has been dealt with
+(an application accepted, a fee paid, an enquiry answered).
+
+## 3d. Sign-up and login (password only)
+
+People create their own accounts at **/register**:
+1. Choose **tenant** or **landlord** (or arrive with `?role=tenant` / `?role=landlord`).
+2. Enter name, phone (international format), **email** and a **password** (at least 8 characters, not a common password),
+   tick the WhatsApp-alerts box if wanted, and confirm they understand the shared placement fee. The account is created and they
+   are logged in (tenants land on the search page, new landlords on the Verification page).
+
+They log in at **/login** with **email or phone number + password**. After 8 wrong attempts for the same login the account is
+locked for 15 minutes. **Forgot password** emails a one-hour reset link (`/forgot-password`, `/reset-password`). Phone numbers are
+not verified by SMS any more: identity is established through the document verification (3e).
+
+Without an account, anyone can browse and view listings. Applying, asking a question, requesting a viewing, saving searches and
+listing a home all need an account. "Create a free account" buttons appear in the header, on the search banner and on every
+listing page, and they return people to what they were doing (`?next=`). Admins can only be created by an existing admin.
+
+## 3e. Document verification (upload and admin review)
+
+**Users upload.** Tenants and landlords open **Verification** in the menu (new landlords are sent there right after
+signing up). Each role has a checklist:
+
+| Role | Required | Optional |
+|---|---|---|
+| Landlord | Identity (national ID or passport); Ownership or authority to let (title deed, rates bill, lease, or an owner's letter of authority) | Proof of address |
+| Tenant | Identity (national ID or passport) | Employer letter or payslip; proof of address |
+
+They can upload JPG, PNG or PDF files (max 5 MB), view them, and remove one that is still pending or rejected. The server
+checks the real file contents (not just the name), straightens and shrinks phone photos, and stores files **privately** in
+`backend/media/private/docs/`. They are never served as public media. **Back this folder up** along with the database.
+
+**Admins review.** Open **Admin > Verification**. A red badge shows how many people are waiting, and it clears once you open the
+tab. Each person's card shows their required and optional checks, and every document can be opened in the page. Approve or
+reject each document; **a rejection needs a reason**, which is sent to the user so they can upload a better copy. When all
+required documents are approved the account becomes **verified** automatically. A manual override for the whole account is under
+"Manual override". Every decision is written to the audit log.
+
+**Specific badges.** Instead of one bare "verified", other users see only what was actually checked, for example "ID verified" and
+"Ownership verified" on a landlord's listing, or "ID verified" and "Income checked" on a tenant's application. The documents
+themselves are never shown to other users.
+
+**Optional rule.** Set `REQUIRE_VERIFIED_LANDLORD=True` in `backend/.env` to stop landlords submitting listings until they have
+uploaded their documents (verified or pending review). It is off by default.
+
+Not included yet: automated ID and selfie matching through a provider, document expiry dates, and credit or police-clearance
+checks. Those need third-party services and are separate steps.
+
+## 3f. Sign in with Google and Facebook
+
+The buttons appear on the login and sign-up pages as soon as the keys exist in `backend/.env`. Restart the backend afterwards.
+
+**Google**
+1. Open https://console.cloud.google.com/ > *APIs & Services* > *Credentials* > *Create credentials* > *OAuth client ID*
+   (configure the consent screen first if asked) > type **Web application**.
+2. Under *Authorised JavaScript origins* add `http://localhost:5173` and, later, your live site (`https://yourdomain.com`).
+3. Copy the **Client ID** into `GOOGLE_CLIENT_ID=` in `backend/.env`.
+
+**Facebook**
+1. Open https://developers.facebook.com/ > *My Apps* > *Create app* > add the product **Facebook Login** (Web).
+2. *Settings > Basic*: copy **App ID** and **App Secret** into `FACEBOOK_APP_ID=` and `FACEBOOK_APP_SECRET=` in `backend/.env`.
+3. *Facebook Login > Settings*: add your site (`http://localhost:5173` while testing, `https://yourdomain.com` live) to the allowed
+   domains / redirect URIs. Facebook requires HTTPS for live sites.
+4. While the app is in *Development* mode only you and added testers can use it. Switch it to *Live* when ready (the
+   `public_profile` and `email` permissions need no review).
+
+**How it behaves.** The server checks the Google or Facebook token itself. A person whose verified email matches an existing account
+is logged in to it. A brand-new person is asked for their phone number and role, then the account is created without a password
+(they can set one under **My account**). Administrator accounts can never use social sign-in.
+
+## 3g. Settings page (logo, colours, wording)
+
+**Admin > Settings** (`/admin/settings`) lets an admin change, with a live preview and without editing files:
+- **Images:** logo, a version for dark backgrounds (made automatically from the logo unless you upload one), a square icon (phones,
+  footer, browser tab) and the login background. JPG logos on a white background get the white removed automatically.
+- **Colours:** the main colour and the dark colour; every button, badge, banner and shadow follows them.
+- **Wording:** site name, tagline, company name, footer line, the search page headline and subtitle, support email and phone.
+- **Sign-ups:** a switch to close new sign-ups, plus a read-only status of the Google and Facebook connection.
+
+Settings are stored in a `site_settings` table that `migrate` creates (`setup_backend.bat` does this), and uploaded images in
+`backend/media/site/`. Back both up with the database.
 
 ## 4. How the money works
 
@@ -134,13 +220,15 @@ search (area > bedrooms > rent) work inside the 24-hour window after a user mess
 
 ## 6. Android app
 
-The React app is mobile-first, so wrap it:
+The website reads its branding from the server, so the Android app is a thin Capacitor shell that opens your **live website**:
 ```bash
-cd frontend
+mkdir android-app && cd android-app
+npm init -y
 npm i @capacitor/core @capacitor/cli @capacitor/android @capacitor/push-notifications
-npx cap init "Rental Platform" com.yourcompany.rental --web-dir=dist
-# set VITE_API_URL to your public API origin, then:
-npm run build && npx cap add android && npx cap sync && npx cap open android
+npx cap init "Rental Platform" com.yourcompany.rental --web-dir=www
+mkdir www && echo "<html></html>" > www/index.html
+# edit capacitor.config.json and add:  "server": { "url": "https://your-live-site.com" }
+npx cap add android && npx cap sync && npx cap open android
 ```
 On first login the app should request push permission and `POST /api/me/devices/ {"fcm_token": "..."}`.
 
@@ -148,12 +236,14 @@ On first login the app should request push permission and `POST /api/me/devices/
 
 | Area | Endpoints |
 |---|---|
-| Auth | `auth/otp/request/`, `auth/otp/verify/`, `auth/login/` (password), `auth/token/refresh/`, `me/`, `me/devices/`, `me/verification-docs/` |
+| Auth | `auth/register/`, `auth/login/` (email or phone + password), `auth/social/`, `auth/social/complete/`, `auth/forgot/`, `auth/reset/`, `auth/token/refresh/`, `me/`, `me/password/`, `me/devices/` |
+| Site | `site/` (public branding), `admin/settings/`, `admin/settings/image/{key}/` |
 | Search | `listings/` (filters: `location, min_rent, max_rent, bedrooms, bathrooms, type, furnishing, amenities, available_by, verified, q, lat, lng, radius_km, sort`), `listings/{id}/`, `locations/`, `amenities/` |
 | Tenant | `listings/{id}/apply/`, `/enquiries/`, `/viewings/`, `/favourite/`, `me/applications/`, `applications/{id}/confirm/`, `/decline/`, `/withdraw/`, `me/saved-searches/` |
 | Landlord | `landlord/listings/` (+ `/submit/`, `/images/`, `/archive/`), `landlord/applications/` (+ `/accept/`, `/reject/`), `landlord/enquiries/`, `landlord/viewings/` |
 | Billing | `placements/`, `placements/{id}/`, `invoices/`, `invoices/{id}/pay/` |
-| Admin | `admin/commission-rules/` (+ `/audit/`), `admin/listings/` (+ `/review/`), `admin/users/`, `admin/verification-docs/`, `admin/placements/`, `admin/invoices/{id}/record-payment/` and `/waive/`, `admin/stats/` |
+| Verification | `me/verification/`, `me/verification-docs/` (+ `{id}/`, `{id}/file/`) |
+| Admin | `admin/commission-rules/` (+ `/audit/`), `admin/listings/` (+ `/review/`), `admin/users/`, `admin/verification/` (queue), `admin/verification-docs/{id}/review/`, `admin/placements/`, `admin/invoices/{id}/record-payment/` and `/waive/`, `admin/stats/` |
 | Webhooks | `webhooks/whatsapp/`, `webhooks/payments/` |
 
 ## 8. Honest status and production checklist
@@ -171,3 +261,10 @@ Before going live:
   privacy policy in place, since you store IDs and rental histories.
 - Pagination, image resizing, throttling and the leakage report are in; **search caching** and
   **payment reminders** are not yet.
+
+## 9. Upgrading from the React (Vite) version
+
+The old `frontend` folder must be **deleted** before the Next.js one is put in place (it has no data in it; your accounts and
+listings live in the database). Then run `setup_backend.bat` again (it creates the new `site_settings` table), run
+`run_frontend.bat` (installs the new packages), and **set a password for every existing account**: people who used to log in with
+an SMS code have none. Anyone with an email address can use *Forgot your password?*; for the rest, set a password in Django admin.

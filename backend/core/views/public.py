@@ -13,7 +13,7 @@ from core.serializers import (AmenitySerializer, ListingDetailSerializer, Listin
 
 def listing_queryset():
     return (Listing.objects.select_related("location__parent", "landlord")
-            .prefetch_related("images", "listing_amenities__amenity"))
+            .prefetch_related("images", "listing_amenities__amenity", "landlord__verification_docs"))
 
 
 class ListingPagination(PageNumberPagination):

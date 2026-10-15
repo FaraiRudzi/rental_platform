@@ -20,8 +20,8 @@ admin.site.index_title = "Accounts and data"
 class UserAdminForm(forms.ModelForm):
     password1 = forms.CharField(
         label="Password", required=False, widget=forms.PasswordInput(render_value=False),
-        help_text="Optional for tenants and landlords (they can log in with an SMS code). "
-                  "Required for admins. Leave blank when editing to keep the current password.")
+        help_text="Required when adding a user (everyone logs in with a password). "
+                  "Leave blank when editing to keep the current password.")
     password2 = forms.CharField(label="Confirm password", required=False, widget=forms.PasswordInput(render_value=False))
 
     class Meta:
@@ -48,10 +48,10 @@ class UserAdminForm(forms.ModelForm):
                 self.add_error("password2", "The two passwords do not match.")
             elif len(p1) < 8:
                 self.add_error("password1", "Use at least 8 characters.")
-        elif data.get("role") == "admin":
-            current = self.instance.password
-            if not current or current.startswith("!"):
-                self.add_error("password1", "Admins need a password, because they log in with it.")
+        elif not self.instance.pk:
+            self.add_error("password1", "Set a password. Everyone logs in with a password now.")
+        if not self.instance.pk and data.get("role") != "admin" and not data.get("email"):
+            self.add_error("email", "Add an email address, so this person can log in with it and reset their password.")
         return data
 
 
@@ -75,8 +75,6 @@ class UserAdmin(admin.ModelAdmin):
         password = form.cleaned_data.get("password1")
         if password:
             obj.set_password(password)
-        elif not change:
-            obj.set_unusable_password()  # SMS-code login only
         if not change and not obj.phone_verified_at:
             obj.phone_verified_at = timezone.now()
         super().save_model(request, obj, form, change)
@@ -168,3 +166,9 @@ class LedgerEntryAdmin(ReadOnlyAdmin):
 class NotificationAdmin(ReadOnlyAdmin):
     list_display = ("id", "user_id", "event", "channel", "status", "created_at")
     list_filter = ("channel", "status")
+
+
+@admin.register(m.VerificationDoc)
+class VerificationDocAdmin(ReadOnlyAdmin):
+    list_display = ("id", "user_id", "doc_type", "status", "reviewed_by_id", "created_at", "reviewed_at")
+    list_filter = ("status", "doc_type")

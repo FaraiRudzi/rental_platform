@@ -3,7 +3,7 @@ RENTAL PLATFORM - HOW TO RUN IT (Windows)
 
 This one folder contains everything:
   backend\                    the server (Python / Django REST API)
-  frontend\                   the website (React)
+  frontend\                   the website (Next.js)
   rental_platform_schema.sql  the database tables
   *.bat                       double-click scripts so you do not have to type commands
 
@@ -11,7 +11,7 @@ ONE-TIME PREPARATION
 --------------------
 1. Install Python 3.10 or newer from python.org.
    IMPORTANT: tick "Add Python to PATH" in the installer.
-2. Install Node.js (the LTS version) from nodejs.org.
+2. Install Node.js (LTS, version 18.17 or newer) from nodejs.org.
 3. Open XAMPP Control Panel and click START next to MySQL.
 4. Your database must be named  rental_platform  and contain the tables.
    If it does not: open http://localhost/phpmyadmin, create a database called
@@ -20,10 +20,11 @@ ONE-TIME PREPARATION
 
 FIRST-TIME SETUP (do these once, in order, by double-clicking)
 --------------------------------------------------------------
-1. setup_backend.bat     Installs everything. Takes a few minutes.
-                         If your MySQL has a password, close it, open backend\.env
-                         in Notepad, put the password after DB_PASSWORD= and run it again.
-2. create_admin.bat      Creates your admin login (phone number + password).
+1. setup_backend.bat     Installs everything and prepares the database connection.
+                         Takes a few minutes. If your MySQL has a password, close it,
+                         open backend\.env in Notepad, put the password after
+                         DB_PASSWORD= and run it again.
+2. create_admin.bat      Creates your admin login (email, phone and a password).
 3. add_location.bat      Adds your city and suburbs.
 
 EVERY TIME YOU WANT TO USE IT
@@ -31,41 +32,59 @@ EVERY TIME YOU WANT TO USE IT
 1. Make sure MySQL is started in XAMPP.
 2. Double-click run_backend.bat    and leave the window open.
 3. Double-click run_frontend.bat   and leave the window open.
+   (The first time it downloads the website's packages, which takes a few minutes.)
 4. Open your browser:
       Website ................ http://localhost:5173
       Django admin ........... http://127.0.0.1:8000/admin/
 
-CREATING TENANT, LANDLORD AND ADMIN ACCOUNTS
---------------------------------------------
-1. Go to http://127.0.0.1:8000/admin/ and log in with the admin phone number and
-   password from create_admin.bat (type the phone exactly, for example +263771234567).
-2. Click Users, then ADD USER. Fill in phone, full name, role (tenant, landlord or
-   admin) and a password of at least 8 characters.
-   For a landlord, set Verification status to "verified" to show the Verified badge.
-3. Go to http://localhost:5173/login, click "Have a password? Log in with it",
-   and sign in with that phone and password. You land on that person's dashboard:
-      tenant   -> search page, then "My applications"
-      landlord -> My dashboard
-      admin    -> Admin
-(Tenants and landlords can also log in with an SMS code. While testing, the code is
-printed in the run_backend.bat window.)
+LOGGING IN AND SIGNING UP
+-------------------------
+- There are no SMS codes any more. Everyone logs in with their EMAIL or PHONE NUMBER
+  plus a PASSWORD (phone numbers in international format, for example +263771234567).
+- New tenants and landlords sign up at http://localhost:5173/register: they choose
+  tenant or landlord, then give name, phone, email and a password (at least 8
+  characters). They can also sign up with Google or Facebook once you have set those
+  up (see README, section 3f). Admin accounts are only created by you.
+- Forgot password: the "Forgot your password?" link emails a reset link. While you are
+  testing, the email is printed in the run_backend.bat window (look for "Reset your
+  ... password" and copy the link into the browser). To send real emails, fill in the
+  EMAIL_ settings in backend\.env.
+- You can also create accounts yourself in Django admin (Users > Add user): give the
+  person a phone, an email and a password, and tell them the password.
+
+CHANGING THE LOGO, COLOURS AND WORDING
+--------------------------------------
+Log in as admin, open Settings in the top menu (http://localhost:5173/admin/settings).
+Upload a new logo, icon and login background, pick your colours, edit the wording,
+and switch sign-ups on or off. Press "Save changes". The whole site updates.
 
 A SIMPLE TEST OF THE WHOLE SYSTEM
 ---------------------------------
-1. Landlord: My dashboard > Add listing (add a photo) > Save and submit for review.
-2. Admin: Admin > Listing review > Approve.
-3. Tenant: find the home on the search page > Apply.
-4. Landlord: Applications > Accept.
-5. Tenant: My applications > Confirm and continue.
-6. Admin: Admin > Placements > Record cash payment (once for each side).
+1. Sign up as a landlord. Upload ID and ownership documents on the Verification page.
+2. Log in as admin: Admin > Verification, approve the documents.
+3. As the landlord: My dashboard > Add listing (with a photo) > Save and submit.
+4. As admin: Admin > Listing review > Approve.
+5. Sign up as a tenant in a private window, find the home, and Apply.
+6. Landlord: Applications > Accept.  Tenant: My applications > Confirm and continue.
+7. Admin: Admin > Placements > Record cash payment (once for each side).
    The phone numbers and address then unlock for both people.
+
+TRY THE DOCUMENT VERIFICATION
+-----------------------------
+New landlords are taken straight to the Verification page after signing up. Admin >
+Verification shows a red number while documents are waiting. Open a document, then
+Approve it, or type a reason and Reject it. The person is told, and approved checks
+show as badges such as "ID verified".
 
 IF SOMETHING GOES WRONG
 -----------------------
-- Browser shows "proxy error / ECONNREFUSED": run_backend.bat is not running.
+- Website shows "server is not reachable": run_backend.bat is not running.
 - "Access denied" or "Unknown database": check backend\.env (DB_USER, DB_PASSWORD,
   DB_NAME=rental_platform) and that MySQL is started in XAMPP.
 - "'python' is not recognized": reinstall Python and tick "Add Python to PATH".
+- "'npm' is not recognized": install Node.js, then close and reopen the window.
+- The website window shows a red error after you updated the files: stop it, delete the
+  frontend\.next folder if it exists, and start run_frontend.bat again.
 - Package install fails on mysqlclient: open Command Prompt in the backend folder and run
       venv\Scripts\activate
       pip install PyMySQL

@@ -1,7 +1,9 @@
+'use client'
+import { useSite } from '@/lib/site'
+
 // Shared frame for the login and sign-up pages: illustrated brand panel + white card.
 const VARIANTS = {
   default: {
-    headline: 'Find a home you can trust.',
     blurb: 'Verified landlords, transparent fees and instant updates, all in one place.',
     points: ['Verified landlords and checked listings', 'Alerts by app, WhatsApp and SMS', 'Clear, shared placement fees with no surprises'],
   },
@@ -18,23 +20,26 @@ const VARIANTS = {
 }
 
 export default function AuthShell({ variant = 'default', wide = false, children }) {
+  const site = useSite()
   const v = VARIANTS[variant] || VARIANTS.default
+  const headline = v.headline || `${site.tagline.replace(/\.$/, '')}.`
+  const style = site.login_background_url ? { '--auth-bg': `url(${site.login_background_url})` } : undefined
   return (
     <div className="auth-page">
-      <aside className="auth-brand">
-        <img className="auth-brand-logo" src="/logo-white.png" alt="NexaSoft Technologies" />
+      <aside className="auth-brand" style={style}>
+        <img className="auth-brand-logo" src={site.logo_white_url || '/logo-white.png'} alt={site.company_name} />
         <div>
-          <h2>{v.headline}</h2>
+          <h2>{headline}</h2>
           <p>{v.blurb}</p>
           <ul className="auth-points">
             {v.points.map((p) => <li key={p}><span>✓</span> {p}</li>)}
           </ul>
         </div>
-        <small>© {new Date().getFullYear()} NexaSoft Technologies · Innovation through technology</small>
+        <small>© {new Date().getFullYear()} {site.company_name}{site.footer_text ? ` · ${site.footer_text}` : ''}</small>
       </aside>
       <section className="auth-panel">
         <div className={`auth-card ${wide ? 'wide' : ''}`}>
-          <img className="auth-logo" src="/logo.png" alt="NexaSoft Technologies" />
+          <img className="auth-logo" src={site.logo_url || '/logo.png'} alt={site.company_name} />
           {children}
         </div>
       </section>

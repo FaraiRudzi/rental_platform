@@ -1,7 +1,9 @@
+'use client'
+
 import { useState } from 'react'
-import { api, money, when } from '../api'
+import { api, money, when } from '@/lib/api'
 import { Alert, Badge, Empty } from './ui'
-import { useAction, useFetch } from '../hooks'
+import { useAction, useFetch } from '@/lib/hooks'
 
 // Shared by tenants and landlords: fee breakdown, invoices, payment, contacts after release.
 export default function Placements({ role }) {

@@ -6,7 +6,7 @@ from rest_framework import serializers
 
 from core.models import (Amenity, Application, CommissionRule, Enquiry, Invoice, Listing, ListingAmenity,
                          Location, Notification, Placement, Property, SavedSearch, User, Viewing)
-from core.services import commission
+from core.services import commission, verification
 
 PROPERTY_TYPES = ["house", "flat", "cottage", "single_room", "shared_room", "backroom", "other"]
 FURNISHING = ["furnished", "semi_furnished", "unfurnished"]
@@ -20,10 +20,18 @@ def media_url(request, path):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    has_password = serializers.SerializerMethodField()
+
+    def get_has_password(self, obj):
+        return bool(obj.password) and not obj.password.startswith("!")
+
+    def validate_email(self, value):
+        return (value or "").strip().lower() or None
+
     class Meta:
         model = User
         fields = ["id", "role", "full_name", "phone", "email", "verification_status",
-                  "whatsapp_opt_in", "status", "created_at"]
+                  "whatsapp_opt_in", "status", "created_at", "has_password"]
         read_only_fields = ["id", "role", "phone", "verification_status", "status", "created_at"]
 
 
@@ -72,7 +80,8 @@ class ListingPublicSerializer(serializers.ModelSerializer):
         return [{"slug": la.amenity.slug, "name": la.amenity.name} for la in obj.listing_amenities.all()]
 
     def get_landlord(self, obj):
-        return {"name": obj.landlord.full_name, "verified": obj.landlord.verification_status == "verified"}
+        return {"name": obj.landlord.full_name, "verified": obj.landlord.verification_status == "verified",
+                "checks": verification.badges(obj.landlord)}
 
     def get_lat(self, obj):
         return round(float(obj.latitude), 3) if obj.latitude is not None else None
@@ -207,7 +216,8 @@ class ApplicationSerializer(serializers.ModelSerializer):
 
     def get_tenant(self, obj):
         t = obj.tenant
-        return {"id": t.id, "name": t.full_name, "verified": t.verification_status == "verified"}
+        return {"id": t.id, "name": t.full_name, "verified": t.verification_status == "verified",
+                "checks": verification.badges(t)}
 
     def get_placement_id(self, obj):
         p = getattr(obj, "placement", None)

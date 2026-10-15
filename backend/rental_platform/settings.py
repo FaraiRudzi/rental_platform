@@ -95,9 +95,26 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
-    "DEFAULT_THROTTLE_RATES": {"otp": "5/min", "search": "120/min", "auth": "20/min"},
+    "DEFAULT_THROTTLE_RATES": {"search": "120/min", "auth": "20/min", "register": "20/hour", "forgot": "5/hour"},
+    "NUM_PROXIES": 1,  # the website server forwards the visitor's IP, so limits apply per visitor
     "EXCEPTION_HANDLER": "core.exceptions.api_exception_handler",
 }
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+PASSWORD_RESET_TIMEOUT = 3600  # reset links work for one hour
+
+# Email (password reset). The default prints the email in the backend window, which is handy while testing.
+EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", "")
+EMAIL_PORT = int(env("EMAIL_PORT", 587))
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "no-reply@example.com")
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),
@@ -116,8 +133,10 @@ RENTAL = {
     "PAYMENT_DEADLINE_HOURS": int(env("RENTAL_PAYMENT_DEADLINE_HOURS", 72)),
     "RELEASE_CONTACTS_WHEN": env("RENTAL_RELEASE_CONTACTS_WHEN", "both_paid"),
     "SMS_FALLBACK_MINUTES": int(env("RENTAL_SMS_FALLBACK_MINUTES", 10)),
-    "OTP_TTL_MINUTES": 10,
-    "OTP_MAX_ATTEMPTS": 5,
+    "REQUIRE_VERIFIED_LANDLORD": env_bool("REQUIRE_VERIFIED_LANDLORD", False),
+    "GOOGLE_CLIENT_ID": env("GOOGLE_CLIENT_ID", ""),
+    "FACEBOOK_APP_ID": env("FACEBOOK_APP_ID", ""),
+    "FACEBOOK_APP_SECRET": env("FACEBOOK_APP_SECRET", ""),
     "SMS": {
         "DRIVER": env("SMS_DRIVER", "log"),
         "URL": env("SMS_HTTP_URL"),

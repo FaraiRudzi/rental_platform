@@ -1,0 +1,20 @@
+// Used until the backend answers (and if it is down). Must match DEFAULTS in the backend's site_settings.py.
+export const SITE_DEFAULTS = {
+  site_name: 'Rental Platform',
+  tagline: 'Find a home you can trust',
+  company_name: 'NexaSoft Technologies',
+  hero_title: 'Find a home you can trust',
+  hero_subtitle: 'Search verified landlords and checked listings, apply in minutes, and get updates by app, WhatsApp or SMS.',
+  support_email: '',
+  support_phone: '',
+  footer_text: 'Innovation through technology',
+  color_primary: '#056be3',
+  color_dark: '#021433',
+  registration_open: true,
+  logo_url: null,
+  logo_white_url: null,
+  logo_icon_url: null,
+  login_background_url: null,
+  google_client_id: null,
+  facebook_app_id: null,
+}

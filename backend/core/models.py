@@ -503,3 +503,15 @@ class AuditLog(Unmanaged):
 
     class Meta(Unmanaged.Meta):
         db_table = "audit_logs"
+
+
+class SiteSetting(models.Model):
+    """Editable site settings (logo, colours, texts). Unlike the other models this table is MANAGED:
+    `python manage.py migrate` creates it, so no SQL needs to be run by hand."""
+    key = models.CharField(max_length=100, unique=True)
+    value = models.JSONField(null=True, blank=True)
+    updated_by = models.BigIntegerField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "site_settings"

@@ -9,6 +9,6 @@ urlpatterns = [
 ]
 
 if settings.DEBUG:
-    # Development only. Only listing photos are public; private/ (ID documents) is NOT exposed.
+    # Development only. Only listing photos and site branding (listings/, site/) are public; private/ (ID documents) is NOT exposed.
     # In production let nginx serve /media/listings/ and nothing else under media.
-    urlpatterns += [re_path(r"^media/(?P<path>listings/.*)$", serve, {"document_root": settings.MEDIA_ROOT})]
+    urlpatterns += [re_path(r"^media/(?P<path>(?:listings|site)/.*)$", serve, {"document_root": settings.MEDIA_ROOT})]
