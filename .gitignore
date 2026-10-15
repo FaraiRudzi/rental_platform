@@ -1,5 +1,7 @@
+```gitignore
 node_modules/
 
 # Local secrets and credentials must never be committed.
 /.env
 /backend/.env
+```
