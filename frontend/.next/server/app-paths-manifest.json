@@ -1,8 +1,11 @@
 {
   "/api/[...path]/route": "app/api/[...path]/route.js",
-  "/(site)/page": "app/(site)/page.js",
-  "/(site)/admin/page": "app/(site)/admin/page.js",
+  "/media/[...path]/route": "app/media/[...path]/route.js",
+  "/(site)/account/page": "app/(site)/account/page.js",
   "/(site)/admin/settings/page": "app/(site)/admin/settings/page.js",
-  "/(auth)/login/page": "app/(auth)/login/page.js",
-  "/(auth)/register/page": "app/(auth)/register/page.js"
+  "/(site)/admin/page": "app/(site)/admin/page.js",
+  "/(site)/listings/[id]/page": "app/(site)/listings/[id]/page.js",
+  "/(site)/deals/page": "app/(site)/deals/page.js",
+  "/(site)/page": "app/(site)/page.js",
+  "/(site)/verification/page": "app/(site)/verification/page.js"
 }

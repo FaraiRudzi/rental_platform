@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from '@/lib/nav-hooks'
 import { api, money, when } from '@/lib/api'
-import DocPreview from '@/components/DocPreview'
-import { Alert, Badge, Empty, Field, PageHeader } from '@/components/ui'
+import AdminCashBook from './AdminCashBook'
+import AdminPlacements from './AdminPlacements'
+import AdminVerification from './AdminVerification'
+import { Alert, Badge, Empty, Field, PageHeader, StatTile } from '@/components/ui'
 import { useAction, useFetch } from '@/lib/hooks'
 
-const TABS = [['stats', 'Overview'], ['rules', 'Fee rules'], ['listings', 'Listing review'], ['verification', 'Verification'], ['users', 'Users'], ['placements', 'Placements']]
+const TABS = [['stats', 'Overview'], ['rules', 'Fee rules'], ['listings', 'Listing review'], ['verification', 'Verification'], ['users', 'Users'], ['placements', 'Placements'], ['cashbook', 'Cash book']]
 
 export default function Admin() {
   const [sp] = useSearchParams()
@@ -52,9 +54,10 @@ export default function Admin() {
       {tab === 'stats' && <Stats />}
       {tab === 'rules' && <Rules />}
       {tab === 'listings' && <ListingReview key={reviewKey} />}
-      {tab === 'verification' && <VerificationReview key={verifKey} />}
+      {tab === 'verification' && <AdminVerification key={verifKey} />}
       {tab === 'users' && <Users />}
       {tab === 'placements' && <AdminPlacements />}
+      {tab === 'cashbook' && <AdminCashBook />}
     </div>
   )
 }
@@ -64,23 +67,29 @@ function Stats() {
   if (error) return <Alert error={error} />
   if (!data) return <p className="muted">Loading…</p>
   const f = data.funnel
+  const sum = (rows) => rows.map((r) => money(r.total, r.currency)).join(' · ') || '0'
   return (
     <div className="stack">
-      <div className="stats">
-        {[['Published listings', f.published_listings], ['Applications', f.applications], ['Accepted', f.accepted], ['Confirmed placements', f.confirmed_placements], ['Fully paid', f.fully_paid]].map(([l, v]) => (
-          <div className="card stat" key={l}><div className="num">{v}</div><div className="muted">{l}</div></div>
-        ))}
+      <div className="tiles">
+        <StatTile icon="home" tone="ok" label="Homes live" value={f.published_listings} />
+        <StatTile icon="user" label="Applications" value={f.applications} />
+        <StatTile icon="check" label="Accepted" value={f.accepted} />
+        <StatTile icon="shield" label="Confirmed deals" value={f.confirmed_placements} />
+        <StatTile icon="dollar" tone="ok" label="Fully paid" value={f.fully_paid} />
+        <StatTile icon="dollar" tone="ok" label="Cash collected" value={sum(data.revenue_collected)} />
+        <StatTile icon="clock" tone="warn" label="Still to collect" value={sum(data.outstanding)} />
       </div>
-      <div className="card"><h3>Fees collected</h3>{data.revenue_collected.length ? data.revenue_collected.map((r) => <div key={r.currency}>{money(r.total, r.currency)}</div>) : <span className="muted">Nothing yet.</span>}</div>
-      <div className="card">
-        <h3>Possible leakage</h3>
-        <p className="muted small">Landlords who accepted 3+ applicants but rarely confirm a placement. Worth a phone call.</p>
-        {data.possible_leakage.length ? data.possible_leakage.map((l) => <div key={l.landlord_id}>{l.name}: {l.accepted} accepted, {l.placements} placements</div>) : <span className="muted">None flagged.</span>}
-      </div>
-      <div className="card">
-        <h3>Searches with no results (last 30 days)</h3>
-        <p className="muted small">Demand without supply. Recruit landlords in these areas first.</p>
-        {data.zero_result_searches.length ? data.zero_result_searches.slice(0, 15).map((s, i) => <div key={i} className="small">{JSON.stringify(s.filters)} <span className="muted">· {s.channel}</span></div>) : <span className="muted">None.</span>}
+      <div className="two">
+        <div className="card stack" style={{ gap: 8 }}>
+          <h3>Possible leakage</h3>
+          <p className="muted small" style={{ margin: 0 }}>Landlords who accepted 3+ applicants but rarely confirm a placement. Worth a phone call.</p>
+          {data.possible_leakage.length ? data.possible_leakage.map((l) => <div key={l.landlord_id} className="row between"><span>{l.name}</span><span className="muted small">{l.accepted} accepted, {l.placements} placements</span></div>) : <span className="muted">None flagged.</span>}
+        </div>
+        <div className="card stack" style={{ gap: 8 }}>
+          <h3>Searches with no results (30 days)</h3>
+          <p className="muted small" style={{ margin: 0 }}>Demand without supply. Recruit landlords in these areas first.</p>
+          {data.zero_result_searches.length ? data.zero_result_searches.slice(0, 12).map((s, i) => <div key={i} className="small"><code>{Object.entries(s.filters || {}).filter(([k]) => k !== 'page').map(([k, v]) => `${k}=${v}`).join(', ') || 'all homes'}</code> <span className="muted">· {s.channel}</span></div>) : <span className="muted">None.</span>}
+        </div>
       </div>
     </div>
   )
@@ -217,109 +226,6 @@ function Users() {
             <td className="nowrap"><button className="link" onClick={() => setVer(u.id, 'verified')}>Verify</button> <button className="link" onClick={() => setVer(u.id, 'rejected')}>Reject</button> <button className="link" onClick={() => act.run(() => api(`/admin/users/${u.id}/status/`, { method: 'POST', body: { status: u.status === 'active' ? 'suspended' : 'active' } }))}>{u.status === 'active' ? 'Suspend' : 'Reinstate'}</button></td></tr>
         ))}</tbody>
       </table></div>
-    </div>
-  )
-}
-
-const CHECK_TONE = { approved: 'ok', pending: 'warn', rejected: 'bad', missing: '' }
-
-function VerificationReview() {
-  const [filter, setFilter] = useState('pending')
-  const { data, error, reload } = useFetch('/admin/verification/', { status: filter })
-  const act = useAction(reload)
-  const [show, setShow] = useState({})
-  const [notes, setNotes] = useState({})
-  const [userNotes, setUserNotes] = useState({})
-
-  const review = (d, status) => act.run(
-    () => api(`/admin/verification-docs/${d.id}/review/`, { method: 'POST', body: { status, note: notes[d.id] || '' } }),
-    status === 'approved' ? 'Document approved.' : 'Document rejected. The user was told why.')
-  const decide = (u, status) => act.run(
-    () => api(`/admin/users/${u.id}/verification/`, { method: 'POST', body: { status, note: userNotes[u.id] || '' } }),
-    `Account marked ${status}.`)
-
-  return (
-    <div className="stack">
-      <div className="note">
-        <strong>How to review.</strong> Open each document and check that it is clear and current, that the name matches the account, and (for
-        ownership) that it relates to the property or owner. Approve or reject each document. A rejection needs a reason, which is sent to the
-        user so they can upload a better one. When every required document is approved, the account becomes verified automatically.
-      </div>
-      <div className="tabs">
-        {[['pending', 'Waiting for review'], ['reviewed', 'Reviewed'], ['all', 'Everyone']].map(([k, l]) => (
-          <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)}>{l}</button>
-        ))}
-      </div>
-      <Alert error={error || act.error} ok={act.ok} />
-      {data?.length === 0 && <Empty>{filter === 'pending' ? 'Nothing is waiting for review.' : 'No documents here yet.'}</Empty>}
-
-      {data?.map(({ user: u, checks, docs, pending_count: pending }) => (
-        <div className="card" key={u.id}>
-          <div className="row between wrap">
-            <div>
-              <h3>{u.name} <span className="badge info">{u.role}</span> <Badge status={u.verification_status} /></h3>
-              <div className="muted small">{u.phone}{u.email && ` · ${u.email}`} · joined {when(u.created_at)}{pending > 0 && ` · ${pending} waiting`}</div>
-            </div>
-          </div>
-          <div className="chips">
-            {checks.map((c) => <span key={c.key} className={`badge ${CHECK_TONE[c.status]}`}>{c.title}{c.required ? '' : ' (optional)'}: {c.status === 'missing' ? 'not provided' : c.status}</span>)}
-          </div>
-
-          {docs.map((d) => (
-            <div className="doc-row" key={d.id}>
-              <div className="row between wrap">
-                <div><strong>{d.doc_label}</strong> <span className="muted small">uploaded {when(d.created_at)}</span></div>
-                <div className="row gap"><Badge status={d.status} />
-                  <button className="link small" onClick={() => setShow({ ...show, [d.id]: !show[d.id] })}>{show[d.id] ? 'Hide document' : 'View document'}</button>
-                </div>
-              </div>
-              {d.review_note && <div className="muted small">Note sent: {d.review_note}</div>}
-              {show[d.id] && <DocPreview path={`/admin/verification-docs/${d.id}/file/`} kind={d.kind} />}
-              <div className="row gap wrap">
-                <input style={{ flex: 1, minWidth: 200 }} placeholder="Reason (required to reject)" value={notes[d.id] || ''} onChange={(e) => setNotes({ ...notes, [d.id]: e.target.value })} />
-                <button className="btn" disabled={act.busy || d.status === 'approved'} onClick={() => review(d, 'approved')}>Approve</button>
-                <button className="btn danger" disabled={act.busy || d.status === 'rejected'} onClick={() => review(d, 'rejected')}>Reject</button>
-              </div>
-            </div>
-          ))}
-
-          <details className="override">
-            <summary>Manual override for the whole account</summary>
-            <div className="row gap wrap" style={{ marginTop: 8 }}>
-              <input style={{ flex: 1, minWidth: 200 }} placeholder="Message to the user (optional)" value={userNotes[u.id] || ''} onChange={(e) => setUserNotes({ ...userNotes, [u.id]: e.target.value })} />
-              <button className="btn ghost" disabled={act.busy} onClick={() => decide(u, 'verified')}>Mark verified</button>
-              <button className="btn danger" disabled={act.busy} onClick={() => decide(u, 'rejected')}>Mark rejected</button>
-            </div>
-          </details>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function AdminPlacements() {
-  const { data, error, reload } = useFetch('/admin/placements/')
-  const act = useAction(reload)
-  return (
-    <div className="stack">
-      <Alert error={error || act.error} ok={act.ok} />
-      {data?.length === 0 && <Empty>No placements yet.</Empty>}
-      {data?.map((p) => (
-        <div className="card" key={p.id}>
-          <div className="row between"><h3>#{p.id} {p.listing.title}</h3><Badge status={p.status} /></div>
-          <p className="muted">Rent {money(p.first_rent, p.currency)} · fee {money(p.total_fee, p.currency)} (landlord {money(p.landlord_fee, p.currency)}, tenant {money(p.tenant_fee, p.currency)}) · confirmed {when(p.confirmed_at)}</p>
-          {p.invoices.map((i) => (
-            <div key={i.id} className="row between small">
-              <span>{i.invoice_no} · {i.payer_role} · {money(i.amount, i.currency)} <Badge status={i.status} /></span>
-              {i.status === 'unpaid' && <span className="row gap">
-                <button className="link" onClick={() => act.run(() => api(`/admin/invoices/${i.id}/record-payment/`, { method: 'POST', body: { method: 'cash' } }), 'Payment recorded.')}>Record cash payment</button>
-                <button className="link" onClick={() => { const r = prompt('Reason for waiving this fee?'); if (r) act.run(() => api(`/admin/invoices/${i.id}/waive/`, { method: 'POST', body: { reason: r } }), 'Waived.') }}>Waive</button>
-              </span>}
-            </div>
-          ))}
-          {!['cancelled', 'active'].includes(p.status) && <button className="btn danger" onClick={() => { const r = prompt('Reason for cancelling?'); if (r) act.run(() => api(`/admin/placements/${p.id}/cancel/`, { method: 'POST', body: { reason: r } }), 'Cancelled.') }}>Cancel placement</button>}
-        </div>
-      ))}
     </div>
   )
 }

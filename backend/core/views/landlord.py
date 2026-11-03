@@ -22,7 +22,7 @@ from core.services import workflow
 from core.services.notifications import notify, resolve_alerts
 from core.views.public import listing_queryset
 
-MAX_IMAGES = 12
+MAX_IMAGES = 3
 
 
 def _own_listing(request, pk):
@@ -149,8 +149,8 @@ def delete_image(request, pk, image_id):
 @api_view(["GET"])
 @permission_classes([IsLandlord])
 def applications(request):
-    qs = (Application.objects.filter(landlord=request.user).select_related("listing", "tenant", "placement")
-          .prefetch_related("tenant__verification_docs"))
+    qs = (Application.objects.filter(landlord=request.user).select_related("listing__location", "tenant", "placement")
+          .prefetch_related("tenant__verification_docs", "listing__images"))
     if s := request.query_params.get("status"):
         qs = qs.filter(status=s)
     return Response(ApplicationSerializer(qs.order_by("-id")[:200], many=True).data)
@@ -205,11 +205,13 @@ def update_viewing(request, pk):
     new_status = request.data.get("status")
     if new_status not in ("confirmed", "cancelled", "completed", "no_show"):
         raise WorkflowError("status must be confirmed, cancelled, completed or no_show.")
+    message = (request.data.get("message") or "").strip()[:200]
     v.status = new_status
     if new_status == "confirmed":
         v.confirmed_at = timezone.now()
     v.save(update_fields=["status", "confirmed_at"])
     resolve_alerts("viewing", v.id, ["viewing_requested"])
     notify(v.tenant, "viewing_updated", "Viewing update",
-           f"Your viewing of {v.listing.title} is now {new_status}.", "viewing", v.id)
+           f"Your viewing of {v.listing.title} is now {new_status}."
+           + (f" Message from the landlord: {message}" if message else ""), "viewing", v.id)
     return Response(ViewingSerializer(v).data)

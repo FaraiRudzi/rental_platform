@@ -1,6 +1,6 @@
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -26,10 +26,14 @@ def apply_for_listing(request, pk):
     listing = _published(pk)
     d = request.data
     size = d.get("household_size")
+    raw_move_in = d.get("desired_move_in")
+    move_in = parse_date(str(raw_move_in)) if raw_move_in else None
+    if raw_move_in and not move_in:
+        raise WorkflowError("The move-in date is not valid.")
     app = workflow.apply_for_listing(
         request.user, listing, message=(d.get("message") or "")[:2000],
         household_size=int(size) if str(size or "").isdigit() else None,
-        desired_move_in=d.get("desired_move_in") or None)
+        desired_move_in=move_in)
     return Response(ApplicationSerializer(app).data, status=201)
 
 
@@ -65,7 +69,8 @@ def create_viewing(request, pk):
 @permission_classes([IsTenant])
 def my_applications(request):
     qs = (Application.objects.filter(tenant=request.user)
-          .select_related("listing", "tenant", "placement").prefetch_related("tenant__verification_docs").order_by("-id")[:100])
+          .select_related("listing__location", "tenant", "placement")
+          .prefetch_related("tenant__verification_docs", "listing__images").order_by("-id")[:100])
     return Response(ApplicationSerializer(qs, many=True).data)
 
 

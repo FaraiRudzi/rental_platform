@@ -40,7 +40,7 @@ function ColorField({ label, value, onChange, fallback }) {
   )
 }
 
-function ImageCard({ item, url, busy, onUpload, onRemove }) {
+function ImageCard({ item, url, busy, disabled, onUpload, onRemove }) {
   const input = useRef(null)
   return (
     <div className="card img-card">
@@ -50,7 +50,7 @@ function ImageCard({ item, url, busy, onUpload, onRemove }) {
       <div className="row gap wrap">
         <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden
           onChange={(e) => { const file = e.target.files[0]; if (file) onUpload(item.key, file); e.target.value = '' }} />
-        <button className="btn ghost" disabled={busy} onClick={() => input.current.click()}>{busy ? 'Working…' : 'Upload new'}</button>
+        <button className="btn ghost" disabled={busy || disabled} onClick={() => input.current.click()}>{busy ? 'Working…' : 'Upload new'}</button>
         {url && <button className="btn danger" disabled={busy} onClick={() => onRemove(item.key)}>Reset to default</button>}
       </div>
     </div>
@@ -70,7 +70,8 @@ export default function AdminSettings() {
   }, [])
 
   if (!data || !form) return error ? <Alert error={error} /> : <p className="muted">Loading…</p>
-  const dirty = JSON.stringify(form) !== JSON.stringify(data.values)
+  const ready = data.storage_ready !== false
+  const dirty = ready && JSON.stringify(form) !== JSON.stringify(data.values)
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
 
   const save = async () => {
@@ -104,11 +105,18 @@ export default function AdminSettings() {
         <button className="btn" disabled={!dirty || busy === 'save'} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save changes'}</button>
       </PageHeader>
       <Alert error={error} ok={ok} />
+      {!ready && (
+        <div className="alert bad" role="alert">
+          <strong>Settings cannot be saved yet.</strong> The settings table has not been created in the database. Close the backend window,
+          double-click <code>setup_backend.bat</code> (or run <code>python manage.py migrate</code>), then start <code>run_backend.bat</code> again
+          and refresh this page.
+        </div>
+      )}
 
       <h2>Logo and images</h2>
       <div className="setting-grid">
         {IMAGES.map((item) => (
-          <ImageCard key={item.key} item={item} url={data.images[item.key]} busy={busy === item.key} onUpload={upload} onRemove={remove} />
+          <ImageCard key={item.key} item={item} url={data.images[item.key]} busy={busy === item.key} disabled={!ready} onUpload={upload} onRemove={remove} />
         ))}
       </div>
 
@@ -134,6 +142,22 @@ export default function AdminSettings() {
             </Field>
           ))}
         </div>
+      </div>
+
+      <h2>Applications</h2>
+      <div className="card stack">
+        <Field label="Latest move-in date (days from today)" hint="A tenant's preferred move-in date must be within this many days (7 to 180). Longer than that and the application is rejected, because landlords will not hold a home that long.">
+          <input type="number" min={7} max={180} step={1} value={form.max_move_in_days} onChange={set('max_move_in_days')} style={{ maxWidth: 160 }} />
+        </Field>
+      </div>
+
+      <h2>Payments</h2>
+      <div className="card stack">
+        <Field label="Cash payment instructions" hint="Shown to tenants and landlords next to their fee share: where and how to pay in cash.">
+          <textarea rows={3} maxLength={400} value={form.cash_instructions} onChange={set('cash_instructions')} />
+        </Field>
+        <label className="check"><input type="checkbox" checked={form.online_payments_enabled} onChange={set('online_payments_enabled')} /> Online payments are available (leave this off while only cash is accepted)</label>
+        <p className="muted small">With online payments off, people see the instructions above instead of a Pay now button, and an admin records the cash in Admin &gt; Placements.</p>
       </div>
 
       <h2>Sign-ups and sign-in</h2>

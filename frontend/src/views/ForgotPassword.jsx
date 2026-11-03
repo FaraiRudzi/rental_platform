@@ -1,9 +1,11 @@
 'use client'
 import { useState } from 'react'
 import AuthShell from '@/components/AuthShell'
+import IconInput from '@/components/IconInput'
 import Link from '@/components/Link'
 import { Alert, Field } from '@/components/ui'
 import { api } from '@/lib/api'
+import { emailError } from '@/lib/validate'
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('')
@@ -24,8 +26,8 @@ export default function ForgotPassword() {
       <Alert error={error} ok={done} />
       {!done && (
         <form onSubmit={submit} className="stack">
-          <Field label="Email address"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required autoFocus /></Field>
-          <button className="btn block" disabled={busy}>{busy ? 'Sending…' : 'Send reset link'}</button>
+          <Field label="Email address" error={emailError(email)}><IconInput icon="mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com" required autoFocus /></Field>
+          <button className="btn block" disabled={busy || !email || !!emailError(email)}>{busy ? 'Sending…' : 'Send reset link'}</button>
         </form>
       )}
       <p className="muted small">Signed up with Google or Facebook and never set a password? Use this too, to create one. Not getting emails? Ask the site administrator to set a password for you.</p>

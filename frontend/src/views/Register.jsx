@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import AuthShell from '@/components/AuthShell'
+import IconInput from '@/components/IconInput'
 import Link from '@/components/Link'
 import PasswordInput from '@/components/PasswordInput'
 import SocialButtons from '@/components/SocialButtons'
@@ -11,6 +12,7 @@ import { home, safeNext } from '@/lib/nav'
 import { useNavigate, useSearchParams } from '@/lib/nav-hooks'
 import { ROLES } from '@/lib/roles'
 import { useSite } from '@/lib/site'
+import { emailError, nameError, passwordError, phoneError } from '@/lib/validate'
 
 const Icon = ({ children }) => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
@@ -27,6 +29,11 @@ export default function Register() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
+  const errs = {
+    full_name: nameError(f.full_name), phone: phoneError(f.phone), email: emailError(f.email), password: passwordError(f.password),
+    confirm: f.confirm && f.confirm !== f.password ? 'The two passwords do not match.' : '',
+  }
+  const hasErrors = Object.values(errs).some(Boolean) || !f.full_name || !f.phone || !f.email || !f.password || !f.confirm
   const loginLink = `/login${next ? `?next=${encodeURIComponent(next)}` : ''}`
   const pickRole = (r) => { const p = new URLSearchParams(sp); if (r) p.set('role', r); else p.delete('role'); setSp(p, { replace: true }) }
 
@@ -85,22 +92,22 @@ export default function Register() {
       <SocialButtons role={role} next={next} label="Sign up" />
       <Alert error={error} />
       <form onSubmit={submit} className="stack">
-        <Field label="Full name"><input value={f.full_name} onChange={set('full_name')} autoComplete="name" required minLength={2} /></Field>
+        <Field label="Full name" error={errs.full_name}><IconInput icon="user" value={f.full_name} onChange={set('full_name')} autoComplete="name" placeholder="As on your ID" required minLength={2} /></Field>
         <div className="two">
-          <Field label="Phone number" hint="International format, for example +263771234567">
-            <input value={f.phone} onChange={set('phone')} placeholder="+263771234567" inputMode="tel" autoComplete="tel" required />
+          <Field label="Phone number" hint="International format, for example +263771234567" error={errs.phone}>
+            <IconInput icon="phone" value={f.phone} onChange={set('phone')} placeholder="+263771234567" inputMode="tel" autoComplete="tel" required />
           </Field>
-          <Field label="Email address" hint="You can log in with it, and use it to reset your password.">
-            <input type="email" value={f.email} onChange={set('email')} autoComplete="email" required />
+          <Field label="Email address" hint="You can log in with it, and use it to reset your password." error={errs.email}>
+            <IconInput icon="mail" type="email" value={f.email} onChange={set('email')} autoComplete="email" placeholder="you@example.com" required />
           </Field>
         </div>
         <div className="two">
-          <Field label="Password" hint="At least 8 characters. Avoid common passwords."><PasswordInput value={f.password} onChange={set('password')} autoComplete="new-password" minLength={8} required /></Field>
-          <Field label="Confirm password"><PasswordInput value={f.confirm} onChange={set('confirm')} autoComplete="new-password" required /></Field>
+          <Field label="Password" hint="At least 8 characters. Avoid common passwords." error={errs.password}><PasswordInput value={f.password} onChange={set('password')} autoComplete="new-password" minLength={8} required /></Field>
+          <Field label="Confirm password" error={errs.confirm}><PasswordInput value={f.confirm} onChange={set('confirm')} autoComplete="new-password" required /></Field>
         </div>
         <label className="consent"><input type="checkbox" checked={f.whatsapp} onChange={set('whatsapp')} /> <span>Send me alerts on WhatsApp as well as in the app.</span></label>
         <label className="consent"><input type="checkbox" checked={f.agree} onChange={set('agree')} /> <span>{c.consent}</span></label>
-        <button className="btn block" disabled={busy}>{busy ? 'Creating account…' : 'Create my account'}</button>
+        <button className="btn block" disabled={busy || hasErrors || !f.agree}>{busy ? 'Creating account…' : 'Create my account'}</button>
       </form>
       <div className="auth-foot">
         <span className="muted">Already have an account? <Link to={loginLink}><strong>Log in</strong></Link></span>

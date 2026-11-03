@@ -1,12 +1,14 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from core.models import (Amenity, Application, CommissionRule, Enquiry, Invoice, Listing, ListingAmenity,
                          Location, Notification, Placement, Property, SavedSearch, User, Viewing)
-from core.services import commission, verification
+from core.services import commission, places, verification
 
 PROPERTY_TYPES = ["house", "flat", "cottage", "single_room", "shared_room", "backroom", "other"]
 FURNISHING = ["furnished", "semi_furnished", "unfurnished"]
@@ -15,8 +17,8 @@ FURNISHING = ["furnished", "semi_furnished", "unfurnished"]
 def media_url(request, path):
     if not path:
         return None
-    url = settings.MEDIA_URL + path
-    return request.build_absolute_uri(url) if request else url
+    # Always a relative link (/media/...). It goes through the website, so it also works from phones and over ngrok.
+    return settings.MEDIA_URL + path
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -36,9 +38,14 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class LocationSerializer(serializers.ModelSerializer):
+    parent_name = serializers.SerializerMethodField()
+
+    def get_parent_name(self, obj):
+        return obj.parent.name if obj.parent_id else None
+
     class Meta:
         model = Location
-        fields = ["id", "parent", "name", "type", "latitude", "longitude"]
+        fields = ["id", "parent", "parent_name", "name", "type", "latitude", "longitude"]
 
 
 class AmenitySerializer(serializers.ModelSerializer):
@@ -116,13 +123,14 @@ class ListingDetailSerializer(ListingPublicSerializer):
 
 
 class LandlordListingWriteSerializer(serializers.Serializer):
-    location = serializers.PrimaryKeyRelatedField(queryset=Location.objects.filter(is_active=True))
-    address_line = serializers.CharField(max_length=255)
+    city = serializers.CharField(max_length=80)
+    suburb = serializers.CharField(max_length=80)
+    address_line = serializers.CharField(max_length=255, min_length=5)
     property_type = serializers.ChoiceField(choices=PROPERTY_TYPES)
     latitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
     longitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
-    title = serializers.CharField(max_length=160)
-    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    title = serializers.CharField(max_length=160, min_length=8)
+    description = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=3000)
     rent = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("1"))
     currency = serializers.CharField(max_length=3, default="USD")
     deposit = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True, min_value=0)
@@ -134,7 +142,17 @@ class LandlordListingWriteSerializer(serializers.Serializer):
     tenant_conditions = serializers.JSONField(required=False, allow_null=True)
     amenities = serializers.ListField(child=serializers.CharField(), required=False, write_only=True)
 
-    PROPERTY_FIELDS = ("location", "address_line", "property_type", "latitude", "longitude")
+    PROPERTY_FIELDS = ("address_line", "property_type", "latitude", "longitude")
+
+    def validate_available_from(self, value):
+        if value is None or (self.instance is not None and value == self.instance.available_from):
+            return value
+        today = timezone.localdate()
+        if value < today:
+            raise serializers.ValidationError("The available-from date cannot be in the past. Leave it empty if the home is available now.")
+        if value > today + timedelta(days=365):
+            raise serializers.ValidationError("The available-from date is more than a year away.")
+        return value
 
     def _set_amenities(self, listing, slugs):
         ListingAmenity.objects.filter(listing=listing).delete()
@@ -145,12 +163,13 @@ class LandlordListingWriteSerializer(serializers.Serializer):
     def create(self, validated):
         landlord = self.context["request"].user
         slugs = validated.pop("amenities", [])
+        location = places.ensure_location(validated.pop("city"), validated.pop("suburb"))
         prop = Property.objects.create(
-            landlord=landlord, location=validated["location"], address_line=validated["address_line"],
+            landlord=landlord, location=location, address_line=validated["address_line"],
             property_type=validated["property_type"], latitude=validated.get("latitude"),
             longitude=validated.get("longitude"), description=validated.get("description"))
         listing = Listing.objects.create(
-            property=prop, landlord=landlord, location=validated["location"],
+            property=prop, landlord=landlord, location=location,
             property_type=validated["property_type"], latitude=validated.get("latitude"),
             longitude=validated.get("longitude"), title=validated["title"],
             description=validated.get("description"), rent=validated["rent"],
@@ -166,6 +185,14 @@ class LandlordListingWriteSerializer(serializers.Serializer):
     def update(self, listing, validated):
         slugs = validated.pop("amenities", None)
         prop = listing.property
+        city, suburb = validated.pop("city", None), validated.pop("suburb", None)
+        if city is not None or suburb is not None:
+            current = listing.location
+            location = places.ensure_location(
+                city if city is not None else (current.parent.name if current.parent_id else ""),
+                suburb if suburb is not None else current.name)
+            listing.location = location
+            prop.location = location
         for key, value in validated.items():
             if key == "currency":
                 value = value.upper()
@@ -182,9 +209,13 @@ class LandlordListingWriteSerializer(serializers.Serializer):
 class LandlordListingReadSerializer(ListingPublicSerializer):
     address_line = serializers.CharField(source="property.address_line", read_only=True)
     application_count = serializers.SerializerMethodField()
+    photos = serializers.SerializerMethodField()
 
     class Meta(ListingPublicSerializer.Meta):
-        fields = ListingPublicSerializer.Meta.fields + ["address_line", "rejection_reason", "application_count"]
+        fields = ListingPublicSerializer.Meta.fields + ["address_line", "rejection_reason", "application_count", "photos"]
+
+    def get_photos(self, obj):
+        return [{"id": i.id, "url": settings.MEDIA_URL + i.file_path} for i in obj.images.all()]
 
     def get_lat(self, obj):  # owners see exact coordinates
         return float(obj.latitude) if obj.latitude is not None else None
@@ -203,16 +234,25 @@ class ApplicationSerializer(serializers.ModelSerializer):
     listing = serializers.SerializerMethodField()
     tenant = serializers.SerializerMethodField()
     placement_id = serializers.SerializerMethodField()
+    placement_status = serializers.SerializerMethodField()
     fee_estimate = serializers.SerializerMethodField()
 
     class Meta:
         model = Application
         fields = ["id", "status", "message", "household_size", "desired_move_in", "accepted_at", "respond_by",
-                  "created_at", "listing", "tenant", "placement_id", "fee_estimate"]
+                  "created_at", "listing", "tenant", "placement_id", "placement_status", "fee_estimate"]
 
     def get_listing(self, obj):
-        return {"id": obj.listing_id, "title": obj.listing.title, "rent": str(obj.listing.rent),
-                "currency": obj.listing.currency, "status": obj.listing.status}
+        listing = obj.listing
+        images = list(listing.images.all())
+        return {"id": obj.listing_id, "title": listing.title, "rent": str(listing.rent), "currency": listing.currency,
+                "status": listing.status, "available_from": listing.available_from,
+                "location": listing.location.name if listing.location_id else None,
+                "cover": (settings.MEDIA_URL + images[0].file_path) if images else None}
+
+    def get_placement_status(self, obj):
+        p = getattr(obj, "placement", None)
+        return p.status if p else None
 
     def get_tenant(self, obj):
         t = obj.tenant
@@ -229,22 +269,78 @@ class ApplicationSerializer(serializers.ModelSerializer):
         return commission.estimate_for_listing(obj.listing)
 
 
+def _received(invoice):
+    """Money received so far, using prefetched payments when available."""
+    return sum((p.amount for p in invoice.payments.all() if p.status == "succeeded"), Decimal("0"))
+
+
 class InvoiceSerializer(serializers.ModelSerializer):
+    payer_name = serializers.CharField(source="payer.full_name", read_only=True)
+    paid_total = serializers.SerializerMethodField()
+    balance = serializers.SerializerMethodField()
+    payments = serializers.SerializerMethodField()
+
     class Meta:
         model = Invoice
-        fields = ["id", "placement", "payer_role", "invoice_no", "amount", "currency", "due_date", "status", "paid_at"]
+        fields = ["id", "placement", "payer_role", "payer_name", "invoice_no", "amount", "currency", "due_date",
+                  "status", "paid_at", "paid_total", "balance", "payments"]
+
+    def get_paid_total(self, obj):
+        return f"{_received(obj):.2f}"
+
+    def get_balance(self, obj):
+        return f"{max(Decimal('0'), obj.amount - _received(obj)):.2f}" if obj.status == "unpaid" else "0.00"
+
+    def get_payments(self, obj):
+        """Receipts are visible to the person who paid and to admins only."""
+        user = getattr(self.context.get("request"), "user", None)
+        if not (user and user.is_authenticated and (user.role == "admin" or user.id == obj.payer_id)):
+            return []
+        out = []
+        for p in sorted(obj.payments.all(), key=lambda x: x.id):
+            data = p.gateway_payload or {}
+            if p.status == "pending" or (p.status == "failed" and not data.get("reversed")):
+                continue
+            out.append({"id": p.id, "amount": str(p.amount), "method": p.method, "receipt_no": p.gateway_reference,
+                        "status": "reversed" if data.get("reversed") else p.status, "paid_at": p.paid_at,
+                        "received_by": data.get("received_by_name"), "note": data.get("note"),
+                        "reversal_reason": data.get("reversal_reason")})
+        return out
 
 
 class PlacementSerializer(serializers.ModelSerializer):
     listing = serializers.SerializerMethodField()
     invoices = InvoiceSerializer(many=True, read_only=True)
     contacts = serializers.SerializerMethodField()
+    landlord_name = serializers.SerializerMethodField()
+    tenant_name = serializers.SerializerMethodField()
+    collected = serializers.SerializerMethodField()
+    outstanding = serializers.SerializerMethodField()
 
     class Meta:
         model = Placement
         fields = ["id", "status", "currency", "first_rent", "total_fee", "landlord_fee", "tenant_fee",
                   "rule_snapshot", "confirmed_at", "payment_deadline", "contacts_released_at", "move_in_date",
-                  "cancel_reason", "listing", "invoices", "contacts"]
+                  "cancel_reason", "listing", "invoices", "contacts", "landlord_name", "tenant_name",
+                  "collected", "outstanding"]
+
+    def _is_admin(self):
+        user = getattr(self.context.get("request"), "user", None)
+        return bool(user and user.is_authenticated and user.role == "admin")
+
+    def get_landlord_name(self, obj):
+        return obj.landlord.full_name if self._is_admin() else None
+
+    def get_tenant_name(self, obj):
+        return obj.tenant.full_name if self._is_admin() else None
+
+    def get_collected(self, obj):
+        return f"{sum((_received(i) for i in obj.invoices.all()), Decimal('0')):.2f}"
+
+    def get_outstanding(self, obj):
+        if obj.status not in ("awaiting_payment", "part_paid"):
+            return "0.00"
+        return f"{sum((max(Decimal('0'), i.amount - _received(i)) for i in obj.invoices.all() if i.status == 'unpaid'), Decimal('0')):.2f}"
 
     def get_listing(self, obj):
         return {"id": obj.listing_id, "title": obj.listing.title}

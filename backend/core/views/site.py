@@ -25,6 +25,7 @@ def _admin_payload():
         "defaults": {k: ss.DEFAULTS[k] for k in ss.EDITABLE_KEYS},
         "images": {k: pub[f"{k}_url"] for k in ss.IMAGE_KEYS},
         "logo_white_custom": bool(s["logo_white_custom"]),
+        "storage_ready": ss.storage_ready(),
         "providers": {"google": bool(cfg["GOOGLE_CLIENT_ID"]),
                       "facebook": bool(cfg["FACEBOOK_APP_ID"] and cfg["FACEBOOK_APP_SECRET"])},
     }

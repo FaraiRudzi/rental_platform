@@ -1,5 +1,6 @@
 import json
-from datetime import timedelta
+from datetime import datetime, time, timedelta
+from decimal import Decimal
 
 from django.core.files.storage import default_storage
 from django.core.serializers.json import DjangoJSONEncoder
@@ -7,13 +8,14 @@ from django.db.models import Count, Q, Sum
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from core.exceptions import WorkflowError
 from core.models import (Application, AuditLog, CommissionRule, CommissionRuleAudit, Invoice, Listing, ListingImage,
-                         Notification, Placement, SearchLog, User, VerificationDoc)
+                         Notification, Payment, Placement, SearchLog, User, VerificationDoc)
 from core.permissions import IsAdmin
 from core.serializers import (CommissionRuleSerializer, InvoiceSerializer, LandlordListingReadSerializer,
                               PlacementSerializer, UserSerializer)
@@ -286,7 +288,7 @@ def mark_verification_alerts_read(request):
 @api_view(["GET"])
 @permission_classes([IsAdmin])
 def placements(request):
-    qs = Placement.objects.select_related("listing__property", "tenant", "landlord").prefetch_related("invoices")
+    qs = Placement.objects.select_related("listing__property", "tenant", "landlord").prefetch_related("invoices__payer", "invoices__payments")
     if s := request.query_params.get("status"):
         qs = qs.filter(status=s)
     return Response(PlacementSerializer(qs.order_by("-id")[:200], many=True, context={"request": request}).data)
@@ -303,22 +305,83 @@ def cancel_placement(request, pk):
     return Response({"detail": "Cancelled. Refund any paid amounts through your payment provider."})
 
 
+def _parse_received_at(raw):
+    if not raw:
+        return None
+    dt = parse_datetime(str(raw))
+    if not dt:
+        raise WorkflowError("The date received is not valid.")
+    return timezone.make_aware(dt) if timezone.is_naive(dt) else dt
+
+
 @api_view(["POST"])
 @permission_classes([IsAdmin])
 def record_payment(request, pk):
-    inv = get_object_or_404(Invoice, pk=pk)
-    billing.admin_record_payment(inv, request.user, request.data.get("method", "cash"), request.data.get("note", ""))
-    return Response({"detail": "Payment recorded."})
+    """Record CASH received for one fee share. Fields: amount (blank = the full balance), received_at, receipt_no, note."""
+    inv = get_object_or_404(Invoice.objects.select_related("payer"), pk=pk)
+    d = request.data
+    amount = d.get("amount")
+    if amount in (None, ""):
+        amount = billing.balance_of(inv)
+    r = billing.record_cash_payment(inv, request.user, amount, _parse_received_at(d.get("received_at")),
+                                    d.get("receipt_no", ""), d.get("note", ""))
+    money = lambda v: workflow.fmt_money(v, inv.currency)  # noqa: E731
+    msg = f"Recorded {money(r['payment'].amount)} cash from {inv.payer.full_name} (receipt {r['receipt_no']}). "
+    msg += "Their share is now fully paid." if r["fully_paid"] else f"Balance still due: {money(r['balance'])}."
+    released = bool(r["placement"].contacts_released_at)
+    if r["placement"].status == "paid" and released:
+        msg += " Both sides have paid, so their contact details were released."
+    return Response({"detail": msg, "receipt_no": r["receipt_no"], "balance": str(r["balance"]),
+                     "fully_paid": r["fully_paid"], "placement_status": r["placement"].status, "contacts_released": released})
+
+
+@api_view(["POST"])
+@permission_classes([IsAdmin])
+def reverse_payment(request, pk):
+    p = get_object_or_404(Payment, pk=pk)
+    billing.reverse_payment(p.id, request.user, request.data.get("reason", ""))
+    return Response({"detail": f"Receipt {p.gateway_reference} was reversed and the person was told."})
+
+
+@api_view(["POST"])
+@permission_classes([IsAdmin])
+def adjust_fee(request, pk):
+    p = get_object_or_404(Placement, pk=pk)
+    inv = billing.adjust_fee(p, request.user, request.data.get("party"), request.data.get("new_amount"),
+                             request.data.get("reason", ""))
+    return Response({"detail": f"The {inv.payer_role} share is now {workflow.fmt_money(inv.amount, inv.currency)}."})
 
 
 @api_view(["POST"])
 @permission_classes([IsAdmin])
 def waive_invoice(request, pk):
     inv = get_object_or_404(Invoice, pk=pk)
-    reason = (request.data.get("reason") or "").strip()
-    if not reason:
-        raise WorkflowError("A reason is required.")
-    return Response(InvoiceSerializer(billing.waive_invoice(inv, request.user, reason)).data)
+    billing.waive_invoice(inv, request.user, request.data.get("reason", ""))
+    return Response({"detail": "The remaining balance was waived and the person was told."})
+
+
+@api_view(["GET"])
+@permission_classes([IsAdmin])
+def cash_book(request):
+    """Every cash receipt, newest first, for reconciling the cash you hold. ?from=YYYY-MM-DD&to=YYYY-MM-DD"""
+    qs = Payment.objects.filter(method="cash").select_related("invoice__payer", "invoice__placement__listing")
+    d_from, d_to = parse_date(request.query_params.get("from") or ""), parse_date(request.query_params.get("to") or "")
+    if d_from:
+        qs = qs.filter(paid_at__gte=timezone.make_aware(datetime.combine(d_from, time.min)))
+    if d_to:
+        qs = qs.filter(paid_at__lte=timezone.make_aware(datetime.combine(d_to, time.max)))
+    rows, totals = [], {}
+    for p in qs.order_by("-paid_at", "-id")[:1000]:
+        data, inv = p.gateway_payload or {}, p.invoice
+        status = "reversed" if data.get("reversed") else p.status
+        rows.append({"id": p.id, "receipt_no": p.gateway_reference, "amount": str(p.amount), "currency": p.currency,
+                     "paid_at": p.paid_at, "status": status, "payer_name": inv.payer.full_name, "payer_role": inv.payer_role,
+                     "invoice_no": inv.invoice_no, "home": inv.placement.listing.title, "placement_id": inv.placement_id,
+                     "received_by": data.get("received_by_name"), "note": data.get("note"),
+                     "reversal_reason": data.get("reversal_reason")})
+        if status == "succeeded":
+            totals[p.currency] = totals.get(p.currency, Decimal("0")) + p.amount
+    return Response({"rows": rows, "totals": [{"currency": c, "total": str(t)} for c, t in totals.items()]})
 
 
 @api_view(["GET"])
@@ -332,7 +395,15 @@ def stats(request):
         "confirmed_placements": Placement.objects.exclude(status="cancelled").count(),
         "fully_paid": Placement.objects.filter(status__in=["paid", "active"]).count(),
     }
-    revenue = list(Invoice.objects.filter(status="paid").values("currency").annotate(total=Sum("amount")))
+    # Cash received so far, and what is still to collect on deals that are waiting for payment.
+    revenue = list(Payment.objects.filter(status="succeeded").values("currency").annotate(total=Sum("amount")))
+    live = ["awaiting_payment", "part_paid"]
+    due = {r["currency"]: r["t"] for r in Invoice.objects.filter(status="unpaid", placement__status__in=live)
+           .values("currency").annotate(t=Sum("amount"))}
+    got = {r["currency"]: r["t"] for r in Payment.objects.filter(
+        status="succeeded", invoice__status="unpaid", invoice__placement__status__in=live)
+        .values("currency").annotate(t=Sum("amount"))}
+    outstanding = [{"currency": c, "total": str(max(Decimal("0"), t - got.get(c, Decimal("0"))))} for c, t in due.items()]
     zero = SearchLog.objects.filter(result_count=0, created_at__gte=since).order_by("-id")[:50]
 
     # Possible leakage: landlords who accept many applicants but rarely confirm a placement.
@@ -343,7 +414,7 @@ def stats(request):
     leakage = [{"landlord_id": lid, "name": names.get(lid), "accepted": n, "placements": placed.get(lid, 0)}
                for lid, n in accepted.items() if n >= 3 and placed.get(lid, 0) / n < 0.34]
     return Response({
-        "funnel": funnel, "revenue_collected": revenue,
+        "funnel": funnel, "revenue_collected": revenue, "outstanding": outstanding,
         "users": list(User.objects.values("role").annotate(n=Count("id"))),
         "zero_result_searches": [{"filters": s.filters, "channel": s.channel, "at": s.created_at} for s in zero],
         "possible_leakage": leakage,

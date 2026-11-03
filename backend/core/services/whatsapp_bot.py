@@ -174,5 +174,6 @@ def _apply(phone, user, listing_id):
     if not listing:
         whatsapp.send_text(phone, "That home was not found.")
         return
-    workflow.apply_for_listing(user, listing, message="Applied via WhatsApp")
+    earliest = max(timezone.localdate(), listing.available_from or timezone.localdate())
+    workflow.apply_for_listing(user, listing, message="Applied via WhatsApp (earliest move-in date)", desired_move_in=earliest)
     whatsapp.send_text(phone, f"Application sent for {listing.title}. We'll tell you as soon as the landlord responds.")

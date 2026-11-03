@@ -53,6 +53,8 @@ def apply_listing_filters(qs, p):
         qs = qs.filter(listing_amenities__amenity__slug=slug)  # chained = must have ALL
     if _val(p, "verified") in TRUTHY:
         qs = qs.filter(landlord__verification_status="verified")
+    if v := _val(p, "area"):  # a typed suburb or town
+        qs = qs.filter(Q(location__name__icontains=v) | Q(location__parent__name__icontains=v))
     if v := _val(p, "q"):
         qs = qs.filter(Q(title__icontains=v) | Q(description__icontains=v))
 

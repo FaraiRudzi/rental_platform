@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
+import { toast } from './toast'
 
 export function useFetch(path, params) {
   const [data, setData] = useState(null)
@@ -24,8 +25,8 @@ export function useAction(after) {
   const [ok, setOk] = useState('')
   const run = async (fn, okMessage = '') => {
     setBusy(true); setError(''); setOk('')
-    try { const r = await fn(); if (okMessage) setOk(okMessage); if (after) after(); return r }
-    catch (e) { setError(e.message) }
+    try { const r = await fn(); if (okMessage) { setOk(okMessage); toast.success(okMessage) } if (after) after(); return r }
+    catch (e) { setError(e.message); toast.error(e.message) }
     finally { setBusy(false) }
   }
   return { run, busy, error, ok, setError }

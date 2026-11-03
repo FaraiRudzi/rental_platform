@@ -36,6 +36,7 @@ urlpatterns = [
     path("locations/", public.locations),
     path("amenities/", public.amenities),
     path("listings/", public.ListingSearchView.as_view()),
+    path("listings/areas/", public.areas),
     path("listings/<int:pk>/", public.ListingDetailView.as_view()),
 
     # --- tenant
@@ -91,6 +92,9 @@ urlpatterns = [
     path("admin/placements/<int:pk>/cancel/", adm.cancel_placement),
     path("admin/invoices/<int:pk>/record-payment/", adm.record_payment),
     path("admin/invoices/<int:pk>/waive/", adm.waive_invoice),
+    path("admin/payments/<int:pk>/reverse/", adm.reverse_payment),
+    path("admin/placements/<int:pk>/adjust-fee/", adm.adjust_fee),
+    path("admin/cash-book/", adm.cash_book),
 
     # --- webhooks
     path("webhooks/whatsapp/", webhooks.whatsapp_webhook),

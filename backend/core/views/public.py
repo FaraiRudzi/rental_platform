@@ -64,7 +64,7 @@ class ListingDetailView(RetrieveAPIView):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def locations(request):
-    qs = Location.objects.filter(is_active=True)
+    qs = Location.objects.filter(is_active=True).select_related("parent")
     if t := request.query_params.get("type"):
         qs = qs.filter(type=t)
     if p := request.query_params.get("parent"):
@@ -76,3 +76,13 @@ def locations(request):
 @permission_classes([AllowAny])
 def amenities(request):
     return Response(AmenitySerializer(Amenity.objects.filter(is_active=True).order_by("category", "name"), many=True).data)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def areas(request):
+    """Suburbs that have homes to rent right now, with counts, for the 'popular areas' links."""
+    rows = (Location.objects.filter(type="suburb", is_active=True)
+            .annotate(n=Count("listings", filter=Q(listings__status="published"))).filter(n__gt=0)
+            .select_related("parent").order_by("-n", "name")[:40])
+    return Response([{"id": r.id, "name": r.name, "city": r.parent.name if r.parent_id else None, "count": r.n} for r in rows])

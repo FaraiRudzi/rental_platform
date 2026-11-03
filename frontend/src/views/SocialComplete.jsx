@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import AuthShell from '@/components/AuthShell'
+import IconInput from '@/components/IconInput'
 import Link from '@/components/Link'
 import { Alert, Field } from '@/components/ui'
 import { api } from '@/lib/api'
@@ -8,6 +9,7 @@ import { useAuth } from '@/lib/auth'
 import { home, safeNext } from '@/lib/nav'
 import { useNavigate, useSearchParams } from '@/lib/nav-hooks'
 import { ROLES } from '@/lib/roles'
+import { phoneError } from '@/lib/validate'
 
 // Second step for someone signing up with Google or Facebook: we need a phone number and their role.
 export default function SocialComplete() {
@@ -58,8 +60,8 @@ export default function SocialComplete() {
             </button>
           ))}
         </div>
-        <Field label="Phone number" hint="International format, for example +263771234567. Used for alerts about your applications.">
-          <input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="+263771234567" inputMode="tel" autoComplete="tel" required />
+        <Field label="Phone number" hint="International format, for example +263771234567. Used for alerts about your applications." error={phoneError(f.phone)}>
+          <IconInput icon="phone" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="+263771234567" inputMode="tel" autoComplete="tel" required />
         </Field>
         <label className="consent"><input type="checkbox" checked={f.whatsapp} onChange={(e) => setF({ ...f, whatsapp: e.target.checked })} /> <span>Send me alerts on WhatsApp as well as in the app.</span></label>
         <label className="consent"><input type="checkbox" checked={f.agree} onChange={(e) => setF({ ...f, agree: e.target.checked })} /> <span>{c ? c.consent : 'I understand that a placement fee is shared between landlord and tenant once a home is confirmed, and I will see my share before I confirm.'}</span></label>

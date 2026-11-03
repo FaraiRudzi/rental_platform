@@ -6,6 +6,7 @@ import { useSite } from '@/lib/site'
 import { useNavigate, useLocation } from '@/lib/nav-hooks'
 import Link from './Link'
 import NavLink from './NavLink'
+import NotificationBell from './NotificationBell'
 
 function BellIcon() {
   return (
@@ -60,7 +61,7 @@ export default function SiteShell({ children }) {
           <div className={`topbar-menu ${open ? 'open' : ''}`}>
             <nav>
               <NavLink to="/" end>Find a home</NavLink>
-              {user?.role === 'tenant' && (<><NavLink to="/deals">My applications</NavLink><NavLink to="/saved">Saved searches</NavLink></>)}
+              {user?.role === 'tenant' && (<><NavLink to="/deals">My applications</NavLink><NavLink to="/saved">Saved</NavLink></>)}
               {user?.role === 'landlord' && <NavLink to="/landlord">My dashboard</NavLink>}
               {isUser && <NavLink to="/verification">Verification{user.verification_status !== 'verified' && <span className="dot warn">!</span>}</NavLink>}
               {user?.role === 'admin' && (<><NavLink to="/admin" end>Admin</NavLink><NavLink to="/admin/settings">Settings</NavLink></>)}
@@ -68,10 +69,7 @@ export default function SiteShell({ children }) {
             <div className="topbar-right">
               {user ? (
                 <>
-                  <NavLink to="/notifications" className="bell" aria-label={`Alerts${unread ? `, ${unread} unread` : ''}`}>
-                    <BellIcon />
-                    {unread > 0 && <span className="dot">{unread > 99 ? '99+' : unread}</span>}
-                  </NavLink>
+                  <NotificationBell unread={unread} />
                   <Link to="/account" className="user-chip" aria-label="My account">
                     <span className="avatar">{user.full_name.trim()[0]?.toUpperCase()}</span>
                     <span className="who"><strong>{user.full_name.split(' ')[0]}</strong><small>{user.role}</small></span>

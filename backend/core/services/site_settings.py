@@ -24,15 +24,20 @@ DEFAULTS = {
     "color_primary": "#056be3",
     "color_dark": "#021433",
     "registration_open": True,
+    "online_payments_enabled": False,
+    "max_move_in_days": 30,
+    "cash_instructions": "Pay your share in cash at our office or to our authorised agent, and keep your receipt. An admin records your payment, and you will get an alert when it has been recorded.",
     "logo": None, "logo_white": None, "logo_icon": None, "login_background": None,
     "logo_white_custom": False,
 }
 TEXT_LIMITS = {"site_name": 60, "tagline": 120, "company_name": 80, "hero_title": 100, "hero_subtitle": 240,
-               "support_email": 120, "support_phone": 40, "footer_text": 160}
+               "support_email": 120, "support_phone": 40, "footer_text": 160, "cash_instructions": 400}
 REQUIRED_TEXT = {"site_name", "company_name", "hero_title"}
 COLOR_KEYS = ("color_primary", "color_dark")
 IMAGE_KEYS = ("logo", "logo_white", "logo_icon", "login_background")
-EDITABLE_KEYS = tuple(TEXT_LIMITS) + COLOR_KEYS + ("registration_open",)
+BOOL_KEYS = ("registration_open", "online_payments_enabled")
+INT_LIMITS = {"max_move_in_days": (7, 180)}
+EDITABLE_KEYS = tuple(TEXT_LIMITS) + COLOR_KEYS + BOOL_KEYS + tuple(INT_LIMITS)
 
 
 def get_all():
@@ -46,7 +51,19 @@ def get_all():
     return values
 
 
+def storage_ready():
+    """False until `migrate` has created the site_settings table."""
+    try:
+        SiteSetting.objects.exists()
+        return True
+    except DatabaseError:
+        return False
+
+
 def _write(updates, admin):
+    if not storage_ready():
+        raise WorkflowError("The settings table has not been created yet. Close the backend window, double-click "
+                            "setup_backend.bat (or run: python manage.py migrate), then start the backend again.")
     for key, value in updates.items():
         SiteSetting.objects.update_or_create(key=key, defaults={"value": value, "updated_by": admin.id if admin else None})
 
@@ -59,6 +76,8 @@ def public_payload():
     out.update({k: s[k] for k in COLOR_KEYS})
     out.update({
         "registration_open": bool(s["registration_open"]),
+        "online_payments_enabled": bool(s["online_payments_enabled"]),
+        "max_move_in_days": int(s["max_move_in_days"] or 30),
         "logo_url": media(s["logo"]), "logo_white_url": media(s["logo_white"]),
         "logo_icon_url": media(s["logo_icon"]), "login_background_url": media(s["login_background"]),
         "google_client_id": cfg["GOOGLE_CLIENT_ID"] or None,
@@ -83,8 +102,17 @@ def update_values(data, admin):
             if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(raw)):
                 raise WorkflowError("Colours must look like #056be3.")
             updates[key] = str(raw).lower()
-        elif key == "registration_open":
+        elif key in BOOL_KEYS:
             updates[key] = bool(raw)
+        elif key in INT_LIMITS:
+            lo, hi = INT_LIMITS[key]
+            try:
+                number = int(raw)
+            except (TypeError, ValueError):
+                raise WorkflowError("Enter the number of days as a whole number.")
+            if not lo <= number <= hi:
+                raise WorkflowError(f"The move-in window must be between {lo} and {hi} days.")
+            updates[key] = number
     if updates:
         _write(updates, admin)
     return list(updates)

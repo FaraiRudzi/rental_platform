@@ -56,7 +56,7 @@ CHANGING THE LOGO, COLOURS AND WORDING
 --------------------------------------
 Log in as admin, open Settings in the top menu (http://localhost:5173/admin/settings).
 Upload a new logo, icon and login background, pick your colours, edit the wording,
-and switch sign-ups on or off. Press "Save changes". The whole site updates.
+set how many days ahead a tenant may choose to move in, and switch sign-ups on or off. Press "Save changes". The whole site updates.
 
 A SIMPLE TEST OF THE WHOLE SYSTEM
 ---------------------------------
@@ -68,6 +68,15 @@ A SIMPLE TEST OF THE WHOLE SYSTEM
 6. Landlord: Applications > Accept.  Tenant: My applications > Confirm and continue.
 7. Admin: Admin > Placements > Record cash payment (once for each side).
    The phone numbers and address then unlock for both people.
+
+CASH PAYMENTS
+-------------
+Only cash is accepted for now. People see your cash instructions (write them under Settings > Payments)
+and their amount. When someone hands you cash: Admin > Placements, open the deal, press
+Record cash payment, enter the amount (part payments are fine), tick the confirmation and save.
+They get an alert, and a printable receipt. When both people have paid in full, their contact
+details unlock. Use Change fee for a discount, Reverse for a mistake, and Admin > Cash book to
+check your total and download it.
 
 TRY THE DOCUMENT VERIFICATION
 -----------------------------

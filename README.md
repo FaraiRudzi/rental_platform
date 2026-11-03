@@ -182,6 +182,56 @@ is logged in to it. A brand-new person is asked for their phone number and role,
 Settings are stored in a `site_settings` table that `migrate` creates (`setup_backend.bat` does this), and uploaded images in
 `backend/media/site/`. Back both up with the database.
 
+## 3h. Cash payments (the only payment method for now)
+
+Online payments are **switched off** (Admin > Settings > Payments). People are shown the cash instructions you wrote there,
+their amount, the reference to quote (the invoice number) and the deadline, instead of a Pay now button.
+
+**Admin > Placements** is where cash is recorded. Open a deal, find the person's share and press **Record cash payment**:
+- **Amount received** (defaults to the full balance; **part payments are allowed**, and the invoice becomes paid when the receipts add up),
+  **date and time received**, an optional **receipt number** (one is created if you leave it blank, or type your receipt-book number) and a note.
+- You must tick "I have received this cash". The screen shows what the balance will be before you save.
+- The person gets an alert with the receipt number and balance. When **both** shares are fully paid, the phone numbers and address are
+  released automatically. Receipts can be printed (**Print receipt**) by the admin and by the person who paid.
+
+**Changing the platform fee.** *Change fee* sets a new amount for one side (a discount or a correction) while the deal is still
+waiting for payment. It cannot go below cash already received, needs a reason, and is written to the fee adjustments, the ledger and the audit
+log. *Waive balance* forgives what is still unpaid on a share (cash already received is kept). *Reverse* undoes a receipt recorded by
+mistake (a reversing ledger entry is added; it is blocked once contact details have been released). *Cancel placement* marks any cash
+received as refunded: **you must hand the cash back yourself**.
+
+**Cash book** (Admin > Cash book) lists every receipt for a date range with totals, so you can check them against the cash you are
+holding, and downloads them as a CSV. The Overview shows **Cash collected** and **Still to collect**.
+
+Every action shows a success or error message at the corner of the screen as well as inside the form.
+
+## 3i. Listings, applications and alerts: the rules
+
+**Adding a listing.** The form asks for **Town / City**, **Location** (suburb or area) and **Street address**. Names are matched
+ignoring case, so "avondale" and "Avondale" are one place; a place that does not exist yet is created automatically (admins can tidy
+the list under Locations in Django admin). The street address stays private until both fee shares are paid. A listing can have **up to
+3 photos** (the first is the cover); they can be added or removed while the listing is a draft or has been rejected. Fields are checked
+while you type.
+
+**Move-in date.** When applying, the tenant chooses a preferred move-in date, checked while typing and again on the server:
+it cannot be in the past, cannot be before the home's *available-from* date (the message says when it is available), and cannot be more than
+**30 days** from today (change this under Admin > Settings > Applications, 7 to 180 days). If the home is only available beyond that
+window, the tenant is asked to apply closer to the date.
+
+**Withdrawing an application** asks for confirmation with a warning, tells the tenant it worked, and sends the landlord an in-app notice.
+On the landlord's Applications tab, withdrawn applications are left out of the default view; under **Closed** they are shown in amber.
+
+**Questions and viewings.** *Apply* is the formal application (it starts the accept, confirm and pay process). *Ask a question* is a
+free message before deciding and does not start anything. *Request a viewing* suggests a time to see the home; the landlord confirms and
+can add a "where to meet" message that is sent to the tenant. The exact address and phone numbers are still only released after payment.
+
+**Alerts.** The bell in the header opens a panel with the latest alerts (mark all as read, jump straight to the item). The Alerts page groups
+them by day with Unread and All views.
+
+**Search and pages.** The search page has a search bar (location with suggestions, type, price range, bedroom pills, more filters),
+popular areas with counts, breadcrumbs, a result count, sorting, grid or list view, numbered pages, cards with a photo carousel, badges, a
+favourite heart and an icon row, and a "similar homes" strip on each listing. Saved homes live under **Saved**.
+
 ## 4. How the money works
 
 - `resolve_rule()` picks the most specific active rule: suburb, then city, then global, then priority.
@@ -268,3 +318,7 @@ The old `frontend` folder must be **deleted** before the Next.js one is put in p
 listings live in the database). Then run `setup_backend.bat` again (it creates the new `site_settings` table), run
 `run_frontend.bat` (installs the new packages), and **set a password for every existing account**: people who used to log in with
 an SMS code have none. Anyone with an email address can use *Forgot your password?*; for the rest, set a password in Django admin.
+
+If the website window says `'next' is not recognized`, the packages were not installed (an old `node_modules` folder made the
+script skip the install). Run `npm install` inside the `frontend` folder, then `run_frontend.bat` again. The script now checks for
+this itself and also stops with a clear message if old React files are still present.

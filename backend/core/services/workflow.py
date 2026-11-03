@@ -4,17 +4,25 @@ Every state change happens here (not in views) so the website, the Android app a
 WhatsApp bot all follow exactly the same rules.
 """
 from datetime import timedelta
+from decimal import Decimal  # noqa: F401
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from core.exceptions import WorkflowError
 from core.models import Application, Invoice, LedgerEntry, Listing, Placement
-from core.services import commission
+from core.services import commission, site_settings
 from core.services.notifications import notify, resolve_alerts
 
 R = settings.RENTAL
+
+
+def paid_total(invoice):
+    """Money actually received for an invoice (cash receipts and online payments that succeeded)."""
+    total = invoice.payments.filter(status="succeeded").aggregate(t=Sum("amount"))["t"]
+    return commission.money(total or 0)
 
 
 def fmt_money(amount, currency):
@@ -28,11 +36,36 @@ def fmt_dt(dt):
 # ------------------------------------------------------------ applications
 
 
+def check_move_in(listing, move_in, household_size=None):
+    """The preferred move-in date must not be in the past, must not be before the home is available,
+    and must be within the allowed window (30 days by default, set in Admin > Settings)."""
+    max_days = int(site_settings.get_all().get("max_move_in_days") or 30)
+    today = timezone.localdate()
+    latest = today + timedelta(days=max_days)
+    available = listing.available_from
+    if move_in is None:
+        raise WorkflowError("Choose your preferred move-in date.")
+    if move_in < today:
+        raise WorkflowError("The move-in date cannot be in the past.")
+    if available and available > latest:
+        raise WorkflowError(f"This home is available from {available:%d %b %Y}, which is more than {max_days} days away. "
+                            "Please apply closer to that date.")
+    if available and move_in < available:
+        raise WorkflowError(f"This home is only available from {available:%d %b %Y}. "
+                            "Choose a move-in date on or after that day.")
+    if move_in > latest:
+        raise WorkflowError(f"Your move-in date is more than {max_days} days away, and landlords will not hold a home that long. "
+                            f"Choose a date on or before {latest:%d %b %Y}.")
+    if household_size is not None and not 1 <= household_size <= 20:
+        raise WorkflowError("Household size must be between 1 and 20.")
+
+
 def apply_for_listing(tenant, listing, message="", household_size=None, desired_move_in=None):
     if tenant.role != "tenant":
         raise WorkflowError("Only tenants can apply for a house.")
     if listing.status != "published":
         raise WorkflowError("This listing is no longer available.")
+    check_move_in(listing, desired_move_in, household_size)
     with transaction.atomic():
         existing = Application.objects.select_for_update().filter(listing=listing, tenant=tenant).first()
         if existing and existing.status not in ("withdrawn", "declined", "expired"):
@@ -63,6 +96,8 @@ def withdraw_application(tenant, app):
     app.status = "withdrawn"
     app.save(update_fields=["status", "updated_at"])
     resolve_alerts("application", app.id, ["application_received"])
+    notify(app.landlord, "application_withdrawn", "Application withdrawn",
+           f"{tenant.full_name} withdrew their application for {app.listing.title}.", "application", app.id, external=False)
     return app
 
 
@@ -224,7 +259,8 @@ def refresh_payment_status(placement):
             Listing.objects.filter(pk=placement.listing_id, status="reserved").update(status="let")
             release_contacts(placement)
     else:
-        new_status = "part_paid" if settled else "awaiting_payment"
+        any_money = any(paid_total(i) > 0 for i in invoices)
+        new_status = "part_paid" if (settled or any_money) else "awaiting_payment"
         if placement.status != new_status:
             placement.status = new_status
             placement.save(update_fields=["status", "updated_at"])
@@ -238,13 +274,14 @@ def cancel_placement(placement, reason, by=None):
         if placement.status in ("cancelled", "active"):
             return placement
         for inv in placement.invoices.select_for_update():
-            if inv.status == "paid" and inv.amount > 0:
+            received = paid_total(inv)
+            if received > 0:  # cash (or online money) was taken, so it is marked for refund
                 inv.status = "refunded"
                 inv.save(update_fields=["status"])
                 inv.payments.filter(status="succeeded").update(status="refunded")
                 LedgerEntry.objects.create(
                     placement=placement, invoice=inv, party=inv.payer_role, entry_type="refund",
-                    direction="credit", amount=inv.amount, currency=inv.currency, note=reason[:255], created_by=by)
+                    direction="credit", amount=received, currency=inv.currency, note=reason[:255], created_by=by)
             elif inv.status == "unpaid":
                 inv.status = "void"
                 inv.save(update_fields=["status"])

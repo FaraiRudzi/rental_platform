@@ -12,7 +12,7 @@ from core.services import billing
 
 def _placements(user):
     return (Placement.objects.filter(Q(tenant=user) | Q(landlord=user))
-            .select_related("listing__property", "tenant", "landlord").prefetch_related("invoices"))
+            .select_related("listing__property", "tenant", "landlord").prefetch_related("invoices__payer", "invoices__payments"))
 
 
 @api_view(["GET"])
