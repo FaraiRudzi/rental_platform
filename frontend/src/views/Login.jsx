@@ -38,7 +38,7 @@ export default function Login() {
 
   return (
     <AuthShell>
-      <h1>Welcome back</h1>
+      <h1>Welcome</h1>
       <p className="muted">Log in with your email or phone number and your password.</p>
       <SocialButtons next={next} />
       <Alert error={error} />

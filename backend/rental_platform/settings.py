@@ -67,13 +67,16 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # declared managed = False, so Django never alters them.
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.mysql",
+        "ENGINE": "django.db.backends.postgresql",
         "NAME": env("DB_NAME", "rental_platform"),
-        "USER": env("DB_USER", "root"),
-        "PASSWORD": env("DB_PASSWORD", ""),
+        "USER": env("DB_USER", "postgres"),
+        "PASSWORD": env("DB_PASSWORD", "farai01rudzi"),
         "HOST": env("DB_HOST", "127.0.0.1"),
-        "PORT": env("DB_PORT", "3306"),
-        "OPTIONS": {"charset": "utf8mb4", "init_command": "SET sql_mode='STRICT_TRANS_TABLES'"},
+        "PORT": env("DB_PORT", "5432"),
+        "CONN_MAX_AGE": 60,
+        "OPTIONS": {
+            "connect_timeout": 10,
+        },
     }
 }
 
